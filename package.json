@@ -1,0 +1,79 @@
+{
+  "name": "@oxmumu3/dsh-incidental-learn",
+  "version": "0.1.0",
+  "private": false,
+  "license": "MIT",
+  "type": "module",
+  "main": "index.js",
+  "description": "顺带私教 for DeepSeek Harness — SHIELD Token-Lite decision cards, non-interruptive 90s right-sidebar drills, cross-Agent blind-spot ledger, and native Socratic mastery checkpoints.",
+  "author": "牛村木木山 <157776623+oxmumu3@users.noreply.github.com>",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/oxmumu3/dsh-incidental-learn"
+  },
+  "keywords": [
+    "deepseek-harness",
+    "dsh",
+    "dsh-plugin",
+    "shield",
+    "incidental-learning",
+    "metacognition"
+  ],
+  "bin": {
+    "dsh-incidental-learn": "./bin/incidental-learn-cli.mjs"
+  },
+  "exports": {
+    ".": "./index.js",
+    "./client": "./client.js",
+    "./cli": "./bin/incidental-learn-cli.mjs",
+    "./package.json": "./package.json"
+  },
+  "files": [
+    "index.js",
+    "client.js",
+    "lib/",
+    "shared/",
+    "bin/",
+    "locale/",
+    "cordis.patch.yml",
+    "LICENSE",
+    "README.md"
+  ],
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "build": "node scripts/build-client.mjs",
+    "check:client": "node scripts/check-client.cjs",
+    "test": "node --test test/*.test.mjs",
+    "pack:release": "node scripts/build-package.mjs"
+  },
+  "dsh": {
+    "bundle": {
+      "patch": "./cordis.patch.yml"
+    },
+    "client": {
+      "platform": "web",
+      "immediately": true,
+      "inject": [
+        "@deepseek-ai/dsh-client-ui-renderer",
+        "@deepseek-ai/dsh-client-ui-layout",
+        "@deepseek-ai/dsh-client-ui-sidebar",
+        "@deepseek-ai/dsh-client-ui-sidebar-right",
+        "@deepseek-ai/dsh-client-ui-plugin-manager",
+        "@deepseek-ai/dsh-client-ui-workspace",
+        "@deepseek-ai/dsh-api-session-controller",
+        "@deepseek-ai/dsh-client-ui-session",
+        "@deepseek-ai/dsh-client-ui-conversation",
+        "@deepseek-ai/dsh-client-ui-chat",
+        "@deepseek-ai/dsh-client-ui-tool"
+      ],
+      "external": []
+    },
+    "manifestVersion": 1
+  },
+  "engines": {
+    "node": ">=22.0.0",
+    "dsh": "0.2.2-rc.2 || 0.2.2-rc.3"
+  }
+}

@@ -1,0 +1,61 @@
+{
+  "appTitle": "Incidental Coach",
+  "eyebrow": "SHIELD · CROSS-AGENT MASTERY LEDGER",
+  "navLabel": "Incidental Coach",
+  "coachTabTitle": "90s Drill",
+  "summaryMetrics": "{mastered} / {total} internalized · {tracks} tracks · {triage} triage",
+  "spotlightHeading": "Today's Top Blind Spot",
+  "spotlightPrimary": "Start 3-Min Deep Drill",
+  "spotlightSecondary": "Inspect Decision Card",
+  "triageHeading": "Pending Triage Inbox",
+  "triageAccept": "Accept to Track",
+  "triageSkip": "Skip",
+  "triageAcceptAll": "Accept All to Tracks",
+  "triageSweepLow": "Sweep Low-Value Items",
+  "tracksHeading": "Capability Tracks",
+  "course15mBtn": "15-Min Micro-Course",
+  "exportNotesBtn": "Export Study Notes",
+  "loadSamplesBtn": "Load Multi-Agent Samples (0 Tokens)",
+  "resetEmptyBtn": "Reset Empty Ledger",
+  "undoAction": "Undo",
+  "sources": {
+    "dsh-chat": "DSH Chat",
+    "antigravity": "Antigravity",
+    "codex": "Codex",
+    "superagent-review": "Super Agent Review",
+    "manual": "Manual"
+  },
+  "epistemic": {
+    "verified": "Verified Source",
+    "explicit": "Explicit Save",
+    "inferred": "Inferred Candidate"
+  },
+  "mastery": {
+    "1": "1/4 Captured",
+    "2": "2/4 Walkthrough",
+    "3": "3/4 Can Recite",
+    "4": "4/4 Transfer Ready"
+  },
+  "fence": {
+    "shieldStreaming": "Incidental Coach · Structuring turn decision card...",
+    "shieldTag": "Decision Card",
+    "shieldWhy": "Why this choice",
+    "shieldRejected": "Rejected alternatives",
+    "shieldProbe": "Quick check",
+    "shieldBtnCoach": "90s Side Drill",
+    "shieldBtnCapture": "Queue to Triage",
+    "shieldBtnDismiss": "Mastered, collapse",
+    "shieldCollapsed": "Decision card collapsed · Expand",
+    "quizTag": "Blind Test First",
+    "quizAnalogy": "Plain-language analogy",
+    "quizDraftWarn": "Composer has an unsent draft; kept intact instead of overwriting",
+    "quizKeepDraft": "Keep Draft & Copy Choice",
+    "quizReplaceSend": "Replace Draft & Send",
+    "passTag": "Checkpoint Passed · Tier Upgraded",
+    "passBackBtn": "Back to Tracks",
+    "passExportBtn": "Export Session Notes"
+  },
+  "pill": {
+    "pendingTemplate": "Coach · {count} to digest"
+  }
+}
