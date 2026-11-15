@@ -49,6 +49,16 @@ test('fence parsers handle JSON, 4-line text SHIELD fallback, quiz, and pass blo
   assert.match(shieldText.why, /dialog\[open\]/)
   assert.match(shieldText.rejected, /无条件/)
 
+  const shieldPlain = parseShieldFence([
+    '顺带学习卡：长列表容器为什么需要 min-height: 0',
+    '- 为什么这么做：Flex 子项默认最小高度按内容算，补 min-height: 0 才允许内部出滚动条',
+    '- 避开的坑：直接写死 height: 600px 在窄分屏下容易裁切或冒出双滚动条',
+    '- 顺手想一下：父容器没给 min-height: 0 时，里面的 overflow-y: auto 为啥没反应？',
+  ].join('\n'))
+  assert.equal(shieldPlain.title, '长列表容器为什么需要 min-height: 0')
+  assert.match(shieldPlain.rejected, /height: 600px/)
+  assert.match(shieldPlain.probe, /overflow-y: auto/)
+
   assert.equal(parseShieldFence('hello plain text without fields'), null)
 
   const quiz = parseLearnQuizFence(JSON.stringify({

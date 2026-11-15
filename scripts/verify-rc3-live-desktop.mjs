@@ -74,6 +74,7 @@ const PROXY = `http://127.0.0.1:${hangPort}`
 const llmRequests = []
 let sawShieldStreaming = false
 let shieldHoldRelease = null
+let shieldHoldReleased = false
 
 function sendSseEvent(res, type, payload) {
   res.write(`event: ${type}\ndata: ${JSON.stringify({ type, ...payload })}\n\n`)
@@ -240,7 +241,10 @@ const llmServer = http.createServer(async (req, res) => {
     return
   }
 
-  // Case D (Probe P1): Normal work chat turn -> split shield fence cleanly mid-stream
+  // Case D (Probe P1): Normal work chat turn -> wait for Host Session follow controller, then split shield fence cleanly mid-stream
+  shieldHoldRelease = null
+  shieldHoldReleased = false
+  await delay(450)
   sendSseEvent(res, 'message_start', {
     message: { id: 'msg-shield-1', type: 'message', role: 'assistant', model: modelId, content: [], stop_reason: null, usage: { input_tokens: 95, output_tokens: 10 } },
   })
@@ -263,17 +267,37 @@ const llmServer = http.createServer(async (req, res) => {
     },
   })
   const half = Math.floor(shieldJson.length / 2)
+  const firstCut = Math.min(60, half)
+  let sentLen = firstCut
   sendSseEvent(res, 'content_block_delta', {
     index: 0,
-    delta: { type: 'text_delta', text: `已经把宿主路由鉴权与状态存储落好。\n\n\`\`\`shield\n${shieldJson.slice(0, half)}` },
+    delta: { type: 'text_delta', text: `已经把宿主路由鉴权与状态存储落好。\n\n\`\`\`shield\n${shieldJson.slice(0, sentLen)}` },
   })
-  await new Promise(resolve => {
-    shieldHoldRelease = resolve
-    setTimeout(resolve, 5000)
-  })
+  const sliceSize = Math.max(1, Math.ceil((half - firstCut) / 3))
+  for (let i = 0; i < 3 && sentLen < half && !shieldHoldReleased; i++) {
+    await delay(180)
+    if (shieldHoldReleased) break
+    const nextLen = i === 2 ? half : Math.min(half, sentLen + sliceSize)
+    if (nextLen > sentLen) {
+      sendSseEvent(res, 'content_block_delta', {
+        index: 0,
+        delta: { type: 'text_delta', text: shieldJson.slice(sentLen, nextLen) },
+      })
+      sentLen = nextLen
+    }
+  }
+  if (!shieldHoldReleased) {
+    await new Promise(resolve => {
+      shieldHoldRelease = () => {
+        shieldHoldReleased = true
+        resolve()
+      }
+      setTimeout(resolve, 12000)
+    })
+  }
   sendSseEvent(res, 'content_block_delta', {
     index: 0,
-    delta: { type: 'text_delta', text: `${shieldJson.slice(half)}\n\`\`\`\n` },
+    delta: { type: 'text_delta', text: `${shieldJson.slice(sentLen)}\n\`\`\`\n` },
   })
   sendSseEvent(res, 'content_block_stop', { index: 0 })
   sendSseEvent(res, 'message_delta', { delta: { stop_reason: 'end_turn' }, usage: { output_tokens: 140 } })
@@ -470,17 +494,24 @@ async function openLearnWorkbench(ui) {
   return boot
 }
 
+async function setHostTheme(ui, theme) {
+  await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })
+  await ui.waitFor(`host theme settled to ${theme}`, () => ui.evaluate(`document.body.hasAttribute('data-ds-dark-theme') === ${theme === 'dark' ? 'true' : 'false'}`), 5000)
+  await ui.evaluate(`document.getAnimations({ subtree: true }).forEach(a => { try { a.finish() } catch {} })`)
+  await delay(80)
+}
+
 async function toggleHostSidebar(ui, wantCollapsed) {
-  return await ui.evaluate(`(() => {
-    const wbRect = document.querySelector('[data-testid="ilp-workbench"]')?.getBoundingClientRect()
+  const res = await ui.evaluate(`(() => {
+    const wbRect = document.querySelector('[data-testid="ilp-workbench"], .ilp-wb, [contenteditable="true"]')?.getBoundingClientRect()
     const isCollapsed = wbRect ? wbRect.left < 70 : false
     if (isCollapsed === ${wantCollapsed ? 'true' : 'false'}) {
       return { toggled: false, isCollapsed }
     }
-    const byLabel = [...document.querySelectorAll('button,[role=button]')].find(el => /收起侧边栏|展开侧边栏|toggle sidebar|collapse sidebar|expand sidebar/i.test((el.getAttribute('aria-label') || '') + ' ' + (el.title || '')))
+    const byLabel = [...document.querySelectorAll('button,[role=button]')].find(el => /展开／收起左侧栏|Toggle left sidebar|收起侧边栏|展开侧边栏|toggle sidebar|collapse sidebar|expand sidebar/i.test((el.getAttribute('aria-label') || '') + ' ' + (el.title || '')))
     const topLeftButtons = [...document.querySelectorAll('button,[role=button]')].filter(el => {
       const r = el.getBoundingClientRect()
-      return r.width >= 16 && r.width <= 48 && r.height >= 16 && r.height <= 48 && r.top >= 4 && r.top <= 48 && r.left >= 60 && r.left <= 280
+      return r.width >= 16 && r.width <= 48 && r.height >= 16 && r.height <= 48 && r.top >= 4 && r.top <= 48 && r.left >= 8 && r.left <= 280
     }).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
     const collapseBtn = byLabel
       || (isCollapsed ? topLeftButtons[0] : (topLeftButtons.find(el => el.getBoundingClientRect().left >= 200) || topLeftButtons[topLeftButtons.length - 1]))
@@ -490,6 +521,18 @@ async function toggleHostSidebar(ui, wantCollapsed) {
     }
     return { toggled: false, isCollapsed }
   })()`)
+  if (res.toggled) {
+    await ui.waitFor(`sidebar ${wantCollapsed ? 'collapsed' : 'expanded'}`, () => ui.evaluate(`(() => {
+      if (window.innerWidth < 900) return true
+      const wb = document.querySelector('[data-testid="ilp-workbench"], .ilp-wb')
+      if (!wb) return true
+      const left = wb.getBoundingClientRect().left
+      return ${wantCollapsed ? 'left < 70' : 'left >= 180'}
+    })()`), 4000)
+    await ui.evaluate(`document.getAnimations({ subtree: true }).forEach(a => { try { a.finish() } catch {} })`)
+    await delay(80)
+  }
+  return res
 }
 
 async function typeIntoLexicalAndSend(ui, text) {
@@ -534,11 +577,9 @@ try {
       await delay(200)
     }
     await ui.command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: false })
-    await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })
-    await delay(200)
+    await setHostTheme(ui, theme)
     if (!collapseSidebar || width >= 900) {
       await toggleHostSidebar(ui, collapseSidebar)
-      await delay(250)
     }
     const metrics = await ui.evaluate(`({
       scrollWidth: document.documentElement.scrollWidth,
@@ -552,62 +593,86 @@ try {
   }
 
   const emptyHeaderCheck = await ui.evaluate(`(() => {
-    const btns = [...document.querySelectorAll('[data-testid="ilp-workbench"] .ilp-header-acts button')].map(b => b.textContent?.trim())
-    const h1Rect = document.querySelector('[data-testid="ilp-workbench"] .ilp-h1')?.getBoundingClientRect()
-    const sumRect = document.querySelector('[data-testid="ilp-workbench"] .ilp-summary')?.getBoundingClientRect()
-    const idleTab = document.querySelector('[data-testid="ilp-sim-tab-idle"]')
+    const wb = document.querySelector('[data-testid="ilp-workbench"]')
+    const emptyRoot = document.querySelector('[data-testid="ilp-empty-onboarding"]')
+    const guide = document.querySelector('[data-testid="ilp-visual-guide"]')
+    const cta = document.querySelector('[data-testid="ilp-start-chat-cta"]')
+    const details = document.querySelector('[data-testid="ilp-welcome-preview"]')
+    const btns = [...wb.querySelectorAll('.ilp-header-acts button')].map(b => b.textContent?.trim())
+    const h1Rect = wb.querySelector('.ilp-h1')?.getBoundingClientRect()
+    const sumRect = wb.querySelector('.ilp-summary')?.getBoundingClientRect()
+    const idleBtn = document.querySelector('[data-testid="ilp-sim-btn-idle"]')
+    const visiblePriCount = emptyRoot ? [...emptyRoot.querySelectorAll('.ilp-btn.solid')].filter(el => el.offsetHeight > 0).length : 0
     return {
       headerBtnCount: btns.length,
-      hasStartChatCta: Boolean(document.querySelector('[data-testid="ilp-start-chat-cta"]')),
-      hasWelcomePreview: Boolean(document.querySelector('[data-testid="ilp-welcome-preview"]')),
-      hasVisualGuide: Boolean(document.querySelector('[data-testid="ilp-visual-guide"]')),
+      visiblePriCount,
+      guideMode: guide?.getAttribute('data-guide-mode'),
+      guideBorderTop: guide ? getComputedStyle(guide).borderTopWidth : null,
+      hasStartChatCta: Boolean(cta),
+      ctaBottom: cta ? Math.round(cta.getBoundingClientRect().bottom) : null,
+      hasWelcomePreview: Boolean(details),
+      simDetailsOpen: details ? Boolean(details.open) : null,
+      hasVisualGuide: Boolean(guide),
       hasToggleGuideBtnOnEmpty: Boolean(document.querySelector('[data-testid="ilp-toggle-guide-btn"]')),
       stepCardsCount: document.querySelectorAll('.ilp-onb-step').length,
+      connectorCount: document.querySelectorAll('.ilp-step-connector').length,
       sceneCount: document.querySelectorAll('.ilp-scene').length,
-      flowPillsCount: document.querySelectorAll('.ilp-vis-pill').length,
-      idleTabSelected: idleTab?.getAttribute('aria-selected'),
+      idleBtnPressed: idleBtn?.getAttribute('aria-pressed'),
       outcomeMode: document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode'),
       summaryGapFromH1: (h1Rect && sumRect) ? Math.round(sumRect.left - h1Rect.right) : null,
     }
   })()`)
   assert.equal(emptyHeaderCheck.headerBtnCount, 0, '0/0 empty header must hide 15m course and export buttons')
+  assert.equal(emptyHeaderCheck.visiblePriCount, 1, 'welcome page must have strictly 1 visible .ilp-btn.solid CTA')
+  assert.equal(emptyHeaderCheck.guideMode, 'empty', 'welcome page must render unboxed empty mode')
+  assert.equal(emptyHeaderCheck.guideBorderTop, '0px', 'empty editorial hero stack must be unboxed')
   assert.equal(emptyHeaderCheck.hasStartChatCta, true, 'welcome page must expose start-chat CTA')
-  assert.equal(emptyHeaderCheck.hasWelcomePreview, true, 'welcome page must expose live decision card preview')
+  assert.ok(emptyHeaderCheck.ctaBottom !== null && emptyHeaderCheck.ctaBottom <= 900, `CTA must fit above fold at 900px, got bottom=${emptyHeaderCheck.ctaBottom}`)
+  assert.equal(emptyHeaderCheck.hasWelcomePreview, true, 'welcome page must expose collapsible simulation preview')
+  assert.equal(emptyHeaderCheck.simDetailsOpen, false, 'Tier-3 simulation <details> must start closed by default')
   assert.equal(emptyHeaderCheck.hasVisualGuide, true, 'welcome page must render visual guide')
   assert.equal(emptyHeaderCheck.hasToggleGuideBtnOnEmpty, false, '0/0 empty header must not show redundant toggle guide button')
   assert.equal(emptyHeaderCheck.stepCardsCount, 3, 'welcome page must show 3 step cards')
+  assert.equal(emptyHeaderCheck.connectorCount, 2, 'welcome page must show 2 step connectors')
   assert.equal(emptyHeaderCheck.sceneCount, 3, 'welcome page must render 3 UI-miniature scene previews')
-  assert.equal(emptyHeaderCheck.flowPillsCount, 4, 'welcome page hero must show 4 visual flow pills')
-  assert.equal(emptyHeaderCheck.idleTabSelected, 'true', 'default simulator tab must be idle (no button clicked)')
+  assert.equal(emptyHeaderCheck.idleBtnPressed, 'true', 'default simulator button must be idle (no button clicked)')
   assert.equal(emptyHeaderCheck.outcomeMode, 'idle', 'default simulator outcome must show idle')
   assert.ok(emptyHeaderCheck.summaryGapFromH1 !== null && emptyHeaderCheck.summaryGapFromH1 <= 64, `summary must align left beside h1, got gap=${emptyHeaderCheck.summaryGapFromH1}`)
 
   // Interactive Scene Simulator assertions (before any Emulation device override so mouseWheel later uses untouched compositor)
-  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-tab-coach"]').click()`)
-  const simCoachState = await ui.waitFor('simulator coach tab active', () => ui.evaluate(`(() => {
-    const tab = document.querySelector('[data-testid="ilp-sim-tab-coach"]')
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-summary"]').click()`)
+  await ui.waitFor('welcome preview details opened', () => ui.evaluate(`document.querySelector('[data-testid="ilp-welcome-preview"]')?.open === true`), 5000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-btn-coach"]').click()`)
+  const simCoachState = await ui.waitFor('simulator coach button active', () => ui.evaluate(`(() => {
+    const btn = document.querySelector('[data-testid="ilp-sim-btn-coach"]')
+    const cta = document.querySelector('[data-testid="ilp-start-chat-cta"]')
     const out = document.querySelector('[data-testid="ilp-sim-outcome"]')
-    if (!tab || tab.getAttribute('aria-selected') !== 'true' || !out) return null
+    if (!btn || btn.getAttribute('aria-pressed') !== 'true' || !out) return null
     return {
-      selected: tab.getAttribute('aria-selected'),
+      pressed: btn.getAttribute('aria-pressed'),
       mode: out.getAttribute('data-mode'),
       text: out.textContent || '',
+      btnBg: getComputedStyle(btn).backgroundColor,
+      priBg: cta ? getComputedStyle(cta).backgroundColor : null,
     }
   })()`), 6000)
-  assert.equal(simCoachState.selected, 'true')
+  assert.equal(simCoachState.pressed, 'true')
   assert.equal(simCoachState.mode, 'coach')
-  assert.ok(simCoachState.text.includes('90s 小灶抽屉'), 'coach outcome must explain 90s sidebar drawer')
+  assert.ok(simCoachState.text.includes('对话右侧学习栏'), 'coach outcome must explain right sidebar learning panel')
+  assert.notEqual(simCoachState.btnBg, simCoachState.priBg, 'active toolbar button must use soft blue/amber tint, never --ilp-pri black fill')
   await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-btn-save"]').click()`)
-  await ui.waitFor('sim save mode active', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'save'`), 4000)
+  await ui.waitFor('sim save mode active', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'save' && document.querySelector('[data-testid="ilp-sim-btn-save"]')?.getAttribute('aria-pressed') === 'true'`), 4000)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-btn-dismiss"]').click()`)
-  await ui.waitFor('sim dismiss mode active', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'dismiss'`), 4000)
-  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-tab-idle"]').click()`)
-  await ui.waitFor('sim idle restored', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'idle'`), 4000)
+  await ui.waitFor('sim dismiss mode active', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'dismiss' && document.querySelector('[data-testid="ilp-sim-btn-dismiss"]')?.getAttribute('aria-pressed') === 'true'`), 4000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-btn-idle"]').click()`)
+  await ui.waitFor('sim idle restored', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'idle' && document.querySelector('[data-testid="ilp-sim-btn-idle"]')?.getAttribute('aria-pressed') === 'true'`), 4000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-summary"]').click()`)
+  await ui.waitFor('welcome preview details closed cleanly', () => ui.evaluate(`document.querySelector('[data-testid="ilp-welcome-preview"]')?.open === false`), 4000)
 
   await ui.evaluate(`document.querySelector('[data-testid="ilp-load-samples-btn"]').click()`)
   await ui.waitFor('sample spotlight + preview banner + 3 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelector('[data-testid="ilp-preview-banner"]') && document.querySelectorAll('.ilp-track').length === 3)`), 15000)
 
-  // Verify non-empty header exposes non-destructive Mechanism Guide toggle (`机制图解`) without wiping accumulated ledger
+  // Verify non-empty header exposes non-destructive Usage Guide toggle (`使用说明`) without wiping accumulated ledger
   const guideCollapsedCheck = await ui.evaluate(`(() => {
     const btn = document.querySelector('[data-testid="ilp-toggle-guide-btn"]')
     return {
@@ -617,27 +682,31 @@ try {
       guideVisible: Boolean(document.querySelector('[data-testid="ilp-visual-guide"]')),
     }
   })()`)
-  assert.equal(guideCollapsedCheck.exists, true, 'non-empty header must show 机制图解 toggle')
-  assert.equal(guideCollapsedCheck.expanded, 'false', '机制图解 toggle must start collapsed')
+  assert.equal(guideCollapsedCheck.exists, true, 'non-empty header must show 使用说明 toggle')
+  assert.equal(guideCollapsedCheck.expanded, 'false', '使用说明 toggle must start collapsed')
   assert.equal(guideCollapsedCheck.guideVisible, false)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-toggle-guide-btn"]').click()`)
-  const guideOpenedCheck = await ui.waitFor('机制图解 opened alongside spotlight', () => ui.evaluate(`(() => {
+  const guideOpenedCheck = await ui.waitFor('使用说明 opened alongside spotlight', () => ui.evaluate(`(() => {
     const g = document.querySelector('[data-testid="ilp-visual-guide"]')
     const s = document.querySelector('[data-testid="ilp-spotlight"]')
     const btn = document.querySelector('[data-testid="ilp-toggle-guide-btn"]')
     if (!g || !s || !btn || btn.getAttribute('aria-expanded') !== 'true') return null
     return {
       expanded: btn.getAttribute('aria-expanded'),
+      mode: g.getAttribute('data-guide-mode'),
+      borderTop: getComputedStyle(g).borderTopWidth,
       guideVisible: g.offsetHeight > 0,
       spotlightVisible: s.offsetHeight > 0,
       hasCloseBtn: Boolean(document.querySelector('[data-testid="ilp-close-guide-btn"]')),
     }
   })()`), 6000)
   assert.equal(guideOpenedCheck.guideVisible, true)
-  assert.equal(guideOpenedCheck.spotlightVisible, true, 'opening 机制图解 must preserve accumulated spotlight below')
+  assert.equal(guideOpenedCheck.mode, 'accumulated')
+  assert.notEqual(guideOpenedCheck.borderTop, '0px', 'accumulated guide mode must wrap inside soft container')
+  assert.equal(guideOpenedCheck.spotlightVisible, true, 'opening 使用说明 must preserve accumulated spotlight below')
   assert.equal(guideOpenedCheck.hasCloseBtn, true)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-toggle-guide-btn"]').click()`)
-  await ui.waitFor('机制图解 collapsed cleanly', () => ui.evaluate(`!document.querySelector('[data-testid="ilp-visual-guide"]') && document.querySelector('[data-testid="ilp-toggle-guide-btn"]')?.getAttribute('aria-expanded') === 'false'`), 6000)
+  await ui.waitFor('使用说明 collapsed cleanly', () => ui.evaluate(`!document.querySelector('[data-testid="ilp-visual-guide"]') && document.querySelector('[data-testid="ilp-toggle-guide-btn"]')?.getAttribute('aria-expanded') === 'false'`), 6000)
 
   // Verify Triage Inbox starts collapsed (`aria-expanded="false"`), expand -> batch sweep -> Undo!
   const triageInitExpanded = await ui.evaluate(`document.querySelector('[data-testid="ilp-triage-toggle"]').getAttribute('aria-expanded')`)
@@ -651,7 +720,7 @@ try {
 
   // Real mouseWheel vertical scroll check BEFORE Emulation device metrics override: expand 15-min course so content overflows cleanly
   await ui.evaluate(`(() => {
-    const btn = [...document.querySelectorAll('[data-testid="ilp-workbench"] button')].find(b => b.textContent?.trim() === '15 分钟闯关课')
+    const btn = document.querySelector('[data-testid="ilp-course-toggle-btn"]')
     if (btn) btn.click()
   })()`)
   const wheelBox = await ui.waitFor('workbench scrollable overflow', () => ui.evaluate(`(() => {
@@ -669,7 +738,7 @@ try {
   await ui.evaluate(`(() => {
     const wb = document.querySelector('.ilp-wb')
     if (wb) wb.scrollTop = 0
-    const closeBtn = [...document.querySelectorAll('[data-testid="ilp-workbench"] button')].find(b => b.textContent?.trim() === '收起 15 分钟闯关课')
+    const closeBtn = document.querySelector('[data-testid="ilp-course-toggle-btn"]')
     if (closeBtn) closeBtn.click()
   })()`)
 
@@ -727,20 +796,53 @@ try {
   await delay(100)
 
   await captureShot('rc3-00-welcome-1440-light.png', 1440, 900, 'light', false)
+  const lightBtnCheck = await ui.evaluate(`(() => {
+    const parseLum = (css) => {
+      const m = /rgba?\\((\\d+),\\s*(\\d+),\\s*(\\d+)/.exec(css || '')
+      if (!m) return null
+      const s = [Number(m[1]), Number(m[2]), Number(m[3])].map(v => {
+        const c = v / 255
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+      })
+      return Number((0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2]).toFixed(3))
+    }
+    const pri = document.querySelector('[data-testid="ilp-start-chat-cta"]')
+    const sec = document.querySelector('[data-testid="ilp-load-samples-btn"]')
+    const priStyle = getComputedStyle(pri)
+    const secStyle = getComputedStyle(sec)
+    return {
+      isDarkTheme: document.body.hasAttribute('data-ds-dark-theme'),
+      priBg: priStyle.backgroundColor,
+      priFg: priStyle.color,
+      secBg: secStyle.backgroundColor,
+      secFg: secStyle.color,
+      priBgLum: parseLum(priStyle.backgroundColor),
+      priFgLum: parseLum(priStyle.color),
+      secBgLum: parseLum(secStyle.backgroundColor),
+    }
+  })()`)
+  assert.equal(lightBtnCheck.isDarkTheme, false, 'light welcome screenshot must settle out of dark mode')
+  assert.ok(lightBtnCheck.priBgLum !== null && lightBtnCheck.priBgLum < 0.05, `light primary CTA bg must be dark solid, got ${lightBtnCheck.priBg} (lum=${lightBtnCheck.priBgLum})`)
+  assert.ok(lightBtnCheck.priFgLum !== null && lightBtnCheck.priFgLum > 0.85, `light primary CTA text must be light, got ${lightBtnCheck.priFg} (lum=${lightBtnCheck.priFgLum})`)
+  assert.ok(lightBtnCheck.secBgLum !== null && lightBtnCheck.secBgLum > 0.85, `light secondary button bg must be bright panel, got ${lightBtnCheck.secBg} (lum=${lightBtnCheck.secBgLum})`)
+
   await captureShot('rc3-00-welcome-1440-dark.png', 1440, 900, 'dark', false)
   await captureShot('rc3-00b-welcome-680-dark.png', 680, 900, 'dark', true)
+  const splitWelcomeCols = await ui.evaluate(`getComputedStyle(document.querySelector('.ilp-story-grid')).gridTemplateColumns.trim()`)
+  assert.equal(splitWelcomeCols.includes(' '), false, `680px welcome storyboard must stack to 1 column, got gridTemplateColumns=${splitWelcomeCols}`)
 
-  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-tab-coach"]').click()`)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-summary"]').click()`)
+  await ui.waitFor('sim details opened for screenshot', () => ui.evaluate(`document.querySelector('[data-testid="ilp-welcome-preview"]')?.open === true`), 5000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-btn-coach"]').click()`)
   await ui.waitFor('sim coach active for screenshot', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'coach'`), 5000)
   await captureShot('rc3-00c-welcome-sim-coach-1440-dark.png', 1440, 900, 'dark', false)
-  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-tab-idle"]').click()`)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-btn-idle"]').click()`)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-summary"]').click()`)
 
   // Restore 1440x900 light + expanded sidebar + sample ledger for Probes P1, P2, P3
   await ui.command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
-  await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
-  await delay(200)
+  await setHostTheme(ui, 'light')
   await toggleHostSidebar(ui, false)
-  await delay(200)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-load-samples-btn"]').click()`)
   await ui.waitFor('sample ledger restored for probes', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]'))`), 10000)
 
@@ -776,12 +878,87 @@ try {
 
   await typeIntoLexicalAndSend(ui, '帮我核对一下长列表滚动布局的 flex:1 与 min-height:0 取舍。')
   sawShieldStreaming = await ui.waitFor('shield streaming placeholder', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-shield-streaming"]'))`), 15000)
+  shieldHoldReleased = true
   if (shieldHoldRelease) shieldHoldRelease()
-  await ui.waitFor('settled shield 4-line card', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-shield-card"]'))`), 15000)
+  await ui.waitFor('settled shield strip card', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-shield-card"]'))`), 15000)
 
-  // Verify zero-click auto-staging persists into LEDGER on disk WITHOUT clicking any card button or polluting undoStack
+  const measureStripStyle = `(() => {
+    const details = document.querySelector('[data-testid="ilp-shield-card"]')
+    const fence = details.closest('.ilp-fence.is-shield')
+    const psHead = fence.querySelector('.ilp-ps-head')
+    const topic = fence.querySelector('.ilp-strip-topic')
+    const badge = fence.querySelector('.ilp-badge-card')
+    const canvas = document.createElement('canvas')
+    canvas.width = 1
+    canvas.height = 1
+    const ctx2d = canvas.getContext('2d')
+    const toRgba = (css) => {
+      ctx2d.clearRect(0, 0, 1, 1)
+      ctx2d.fillStyle = '#000000'
+      ctx2d.fillStyle = css
+      ctx2d.fillRect(0, 0, 1, 1)
+      return [...ctx2d.getImageData(0, 0, 1, 1).data]
+    }
+    const blend = (bg, fg) => {
+      const a = fg[3] / 255
+      return [
+        Math.round(fg[0] * a + bg[0] * (1 - a)),
+        Math.round(fg[1] * a + bg[1] * (1 - a)),
+        Math.round(fg[2] * a + bg[2] * (1 - a)),
+        255,
+      ]
+    }
+    const chain = []
+    for (let cur = details; cur; cur = cur.parentElement) chain.unshift(cur)
+    let surface = toRgba(document.body.hasAttribute('data-ds-dark-theme') ? '#151517' : '#ffffff')
+    for (const node of chain) {
+      const bg = getComputedStyle(node).backgroundColor
+      if (!bg || bg === 'rgba(0, 0, 0, 0)' || bg === 'transparent') continue
+      surface = blend(surface, toRgba(bg))
+    }
+    const fg = blend(surface, toRgba(getComputedStyle(topic).color))
+    const badgeColor = blend(surface, toRgba(getComputedStyle(badge).color))
+    const badgeBg = blend(surface, toRgba(getComputedStyle(badge).backgroundColor))
+    const lum = (rgb) => {
+      const s = rgb.slice(0, 3).map(v => {
+        const c = v / 255
+        return c <= 0.03928 ? c / 12.92 : Math.pow((c + 0.055) / 1.055, 2.4)
+      })
+      return 0.2126 * s[0] + 0.7152 * s[1] + 0.0722 * s[2]
+    }
+    const l1 = lum(surface)
+    const l2 = lum(fg)
+    const contrast = Number(((Math.max(l1, l2) + 0.05) / (Math.min(l1, l2) + 0.05)).toFixed(2))
+    const badgeChroma = Math.max(badgeColor[0], badgeColor[1], badgeColor[2]) - Math.min(badgeColor[0], badgeColor[1], badgeColor[2])
+    const badgeBgChroma = Math.max(badgeBg[0], badgeBg[1], badgeBg[2]) - Math.min(badgeBg[0], badgeBg[1], badgeBg[2])
+    return {
+      tagName: details.tagName,
+      open: Boolean(details.open),
+      psVisible: Boolean(psHead && psHead.offsetHeight > 0),
+      psText: psHead ? psHead.textContent : '',
+      fenceWidth: Math.round(fence.getBoundingClientRect().width),
+      topicFontWeight: getComputedStyle(topic).fontWeight,
+      topicFontSize: getComputedStyle(topic).fontSize,
+      contrast,
+      badgeChroma: Math.max(badgeChroma, badgeBgChroma),
+      topicColorCss: getComputedStyle(topic).color,
+    }
+  })()`
+
+  const collapsedLightCheck = await ui.evaluate(measureStripStyle)
+  assert.equal(collapsedLightCheck.tagName, 'DETAILS', 'shield strip must use native <details>')
+  assert.equal(collapsedLightCheck.open, false, 'shield strip must start collapsed by default')
+  assert.equal(collapsedLightCheck.psVisible, true, 'postscript divider header must be visible')
+  assert.ok(collapsedLightCheck.psText.includes('顺带补充'), 'postscript header must label card as incidental')
+  assert.ok(collapsedLightCheck.fenceWidth <= 609, `shield strip must be narrower than prose (<= 609px), got ${collapsedLightCheck.fenceWidth}`)
+  assert.equal(collapsedLightCheck.topicFontWeight, '400', 'strip topic must be unbolded (400)')
+  assert.equal(collapsedLightCheck.topicFontSize, '12.5px', 'strip topic fontSize must be 12.5px')
+  assert.ok(collapsedLightCheck.contrast >= 4.5, `light topic contrast on strip must be >= 4.5, got ${collapsedLightCheck.contrast}`)
+  assert.ok(collapsedLightCheck.badgeChroma <= 28, `resting badge must be monochrome neutral slate gray, got chroma=${collapsedLightCheck.badgeChroma}`)
+
+  // Verify zero-click auto-staging persists into LEDGER on disk EVEN WHILE <details> IS COLLAPSED
   const undoCountBeforeAuto = JSON.parse(fs.readFileSync(LEDGER, 'utf8')).undoStack?.length || 0
-  const autoCapturedEntry = await ui.waitFor('zero-click auto-staged triage candidate on disk', () => {
+  const autoCapturedEntry = await ui.waitFor('zero-click auto-staged triage candidate on disk while collapsed', () => {
     const raw = JSON.parse(fs.readFileSync(LEDGER, 'utf8'))
     const match = (raw.triage || []).find(c => /flex:1|min-height:0/.test(c.title || ''))
     if (!match) return null
@@ -796,7 +973,21 @@ try {
   assert.ok(autoCapturedEntry.autoCapturedKeysCount >= 1, 'autoCapturedKeys must record cardKey')
   assert.equal(autoCapturedEntry.undoStackLen, undoCountBeforeAuto, 'auto-capture must not add undoStack entries')
 
-  // Verify composer draft protection + non-destructive right-drawer trigger
+  // Capture @2x collapsed strip in Light & Dark, checking WCAG contrast in Dark too, then restore Light
+  await delay(150)
+  const shot05a = await ui.command('Page.captureScreenshot', { format: 'png', fromSurface: true })
+  fs.writeFileSync(path.join(OUT_DIR, 'rc3-05a-chat-strip-collapsed-1440-light.png'), Buffer.from(shot05a.data, 'base64'))
+  shots.push({ name: 'rc3-05a-chat-strip-collapsed-1440-light.png', width: 1440, height: 900, theme: 'light' })
+
+  await setHostTheme(ui, 'dark')
+  const collapsedDarkCheck = await ui.evaluate(measureStripStyle)
+  assert.ok(collapsedDarkCheck.contrast >= 4.5, `dark topic contrast on strip must be >= 4.5, got ${collapsedDarkCheck.contrast}`)
+  const shot05b = await ui.command('Page.captureScreenshot', { format: 'png', fromSurface: true })
+  fs.writeFileSync(path.join(OUT_DIR, 'rc3-05b-chat-strip-collapsed-1440-dark.png'), Buffer.from(shot05b.data, 'base64'))
+  shots.push({ name: 'rc3-05b-chat-strip-collapsed-1440-dark.png', width: 1440, height: 900, theme: 'dark' })
+  await setHostTheme(ui, 'light')
+
+  // Verify composer draft protection + click <summary> to expand + non-destructive right-drawer trigger
   const composerPos = await ui.evaluate(`(() => {
     const ed = document.querySelector('[contenteditable="true"]');
     const r = ed.getBoundingClientRect();
@@ -808,8 +999,23 @@ try {
   await ui.command('Input.insertText', { text: '正在写的业务代码说明' })
   await delay(100)
 
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-strip-summary"]').click()`)
+  const expandedLightCheck = await ui.waitFor('strip details expanded', () => ui.evaluate(`(() => {
+    const details = document.querySelector('[data-testid="ilp-shield-card"]')
+    if (!details || !details.open) return null
+    const topic = details.querySelector('.ilp-strip-topic')
+    return {
+      open: details.open,
+      topicFontWeight: getComputedStyle(topic).fontWeight,
+      topicColorCss: getComputedStyle(topic).color,
+    }
+  })()`), 6000)
+  assert.equal(expandedLightCheck.open, true, 'clicking summary must expand strip details')
+  assert.equal(expandedLightCheck.topicFontWeight, '400', 'expanded strip topic must stay unbolded (400)')
+  assert.equal(expandedLightCheck.topicColorCss, collapsedLightCheck.topicColorCss, 'expanded strip topic must stay muted gray')
+
   await ui.evaluate(`document.querySelector('[data-testid="ilp-shield-coach-btn"]').click()`)
-  await ui.waitFor('right sidebar 90s drawer mounted and slid open', () => ui.evaluate(`(() => {
+  await ui.waitFor('right sidebar learning drawer mounted and slid open', () => ui.evaluate(`(() => {
     const el = document.querySelector('[data-testid="ilp-coach-drawer"]')
     if (!el) return false
     const r = el.getBoundingClientRect()
@@ -817,7 +1023,7 @@ try {
   })()`), 10000)
   await delay(250)
 
-  // Capture @2x screenshot of live chat + shield card + right 90s drawer + preserved draft
+  // Capture @2x screenshot of live chat + expanded strip + right learning drawer + preserved draft
   const shot05 = await ui.command('Page.captureScreenshot', { format: 'png', fromSurface: true })
   fs.writeFileSync(path.join(OUT_DIR, 'rc3-05-chat-shield-drawer-1440-light.png'), Buffer.from(shot05.data, 'base64'))
   shots.push({ name: 'rc3-05-chat-shield-drawer-1440-light.png', width: 1440, height: 900, theme: 'light' })
@@ -828,13 +1034,17 @@ try {
   const draftAfterDrawer = await ui.evaluate(`document.querySelector('[contenteditable="true"]')?.innerText?.trim()`)
   assert.ok(draftAfterDrawer.includes('正在写的业务代码说明'), `Right drawer must not disturb main composer draft; got: ${draftAfterDrawer}`)
 
-  // Click 「直接收入路线」 -> promotes via save_explicit & updates digest pill in conversation.input.right!
+  // Click 「加入重点学」 -> promotes via save_explicit & updates digest pill in conversation.input.right!
   await ui.evaluate(`document.querySelector('[data-testid="ilp-shield-capture-btn"]').click()`)
   const shieldFb = await ui.waitFor('shield direct save feedback', () => ui.evaluate(`document.querySelector('[data-testid="ilp-shield-feedback"]')?.textContent || null`), 8000)
-  assert.match(shieldFb, /已直接收入能力路线|已在能力路线中/)
+  assert.match(shieldFb, /已标为重点待学|已在重点清单中/)
   const pillText = await ui.waitFor('composer right pill present', () => ui.evaluate(`document.querySelector('[data-testid="ilp-composer-pill"]')?.textContent || null`), 8000)
+  assert.match(pillText, /^顺带学习 · 已存 \d+ 张$/)
   receipt.probeP1P2 = {
     emptyWelcomeCheck: emptyHeaderCheck,
+    stripCollapsedLight: collapsedLightCheck,
+    stripCollapsedDark: collapsedDarkCheck,
+    stripExpandedLight: expandedLightCheck,
     zeroClickAutoCaptured: autoCapturedEntry,
     sawShieldStreaming: Boolean(sawShieldStreaming),
     settledShieldRendered: true,
@@ -902,8 +1112,8 @@ try {
   await ui.evaluate(`document.querySelector('[data-testid="ilp-draft-guard-replace"]').click()`)
   await ui.waitFor('learn-pass permanent graduation fence rendered', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-learn-pass-card"]'))`), 25000)
 
-  await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'dark' }] })
-  await delay(250)
+  await setHostTheme(ui, 'dark')
+  await delay(150)
   const shot06 = await ui.command('Page.captureScreenshot', { format: 'png', fromSurface: true })
   fs.writeFileSync(path.join(OUT_DIR, 'rc3-06-deep-learn-pass-1440-dark.png'), Buffer.from(shot06.data, 'base64'))
   shots.push({ name: 'rc3-06-deep-learn-pass-1440-dark.png', width: 1440, height: 900, theme: 'dark' })

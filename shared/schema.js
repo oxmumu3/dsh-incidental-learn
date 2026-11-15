@@ -341,12 +341,12 @@ export function parseShieldFence(code) {
     const cleaned = line.replace(/^[-*•\s]+/, '').replace(/\*\*/g, '')
     if (/^(?:为什么这么做|Why|核心原因)[：:]/i.test(cleaned)) {
       why = cleaned.replace(/^(?:为什么这么做|Why|核心原因)[：:]\s*/i, '')
-    } else if (/^(?:被排除的差方案|被排除方案|Rejected|排除方案)[：:]/i.test(cleaned)) {
-      rejected = cleaned.replace(/^(?:被排除的差方案|被排除方案|Rejected|排除方案)[：:]\s*/i, '')
-    } else if (/^(?:一句话摸底|摸底追问|Probe|摸底)[：:]/i.test(cleaned)) {
-      probe = cleaned.replace(/^(?:一句话摸底|摸底追问|Probe|摸底)[：:]\s*/i, '')
-    } else if (/^(?:标题|主题|Title|决策底牌)[：:]/i.test(cleaned)) {
-      title = cleaned.replace(/^(?:标题|主题|Title|决策底牌)[：:]\s*/i, '')
+    } else if (/^(?:被排除的差方案|被排除方案|避开的坑|Rejected|排除方案)[：:]/i.test(cleaned)) {
+      rejected = cleaned.replace(/^(?:被排除的差方案|被排除方案|避开的坑|Rejected|排除方案)[：:]\s*/i, '')
+    } else if (/^(?:一句话摸底|顺手想一下|摸底追问|Probe|摸底)[：:]/i.test(cleaned)) {
+      probe = cleaned.replace(/^(?:一句话摸底|顺手想一下|摸底追问|Probe|摸底)[：:]\s*/i, '')
+    } else if (/^(?:标题|主题|Title|决策底牌|顺带学习卡)[：:]/i.test(cleaned)) {
+      title = cleaned.replace(/^(?:标题|主题|Title|决策底牌|顺带学习卡)[：:]\s*/i, '')
     } else if (!title && !cleaned.startsWith('[顺带私教')) {
       title = cleaned
     }

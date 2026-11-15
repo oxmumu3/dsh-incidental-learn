@@ -3,15 +3,15 @@
 > 作者：`牛村木木山 <157776623+oxmumu3@users.noreply.github.com>`  
 > 适用宿主：`DeepSeek Harness >=0.2.2-rc.2 || 0.2.2-rc.3`
 
-将 **SHIELD Token-Lite 协议** 升级为 DeepSeek Harness 原生个人技能内化工作台：日常干活零打断，仅在存在实质工程、架构或前端取舍的回合末尾就地渲染 4 行「决策底牌」卡片；点击「右侧接招 90s」在宿主右侧栏不污染主对话完成单轮盲测；「开始 3 分钟闯关」复用原生对话流完成「先探后讲 + 换景追问」并沉淀跨 Agent 共享盲区账本。
+把日常跟 Agent 协作干活中遇到的真实工程、架构与前端设计取舍顺手攒下来，沉淀为个人技能库：平时干活零打扰，仅在值得留心的回合末尾附上一条低调柔和灰的可折起「顺带学习卡」（带「附 · 顺带补充（非本轮主回复）」分隔与默认折起 1 行摘要条，不抢主回答的风头）；忙时完全不用点按钮，系统在后台自动存档；有空时点击「在右侧边聊边学」在右侧顺带学习栏不扰动主对话草稿完成一题点拨，或点「开始 3 分钟展开学」深入闯关并沉淀跨 Agent 共享技能库。
 
 ## 架构概览
 
 1. **五格客户端槽位 (`client.js`)**：
-   - `sidebar.panellist` + `main` (`key: 'incidental-learn'`)：840px 单栏能力路线账本、今日头号盲区、默认折叠的待分诊收件箱、15 分钟闯关课、原生 `<dialog closedby="any">` 过关证据窗与零 Token 演示样本入口。
-   - `conversation.chat.markdown.fence` (`shield` / `learn-quiz` / `learn-pass`)：独立于 `foldCompletedTurns`，流式阶段平稳占位，定稿后就地交互；选项作答内置草稿保护（非空不覆盖）与空闲直发（`useInput` + `inputActions`）。
-   - `sidebarRightTabs` + `sidebar.right.pane.tab` (`id: '@oxmumu3/dsh-incidental-learn/coach'`, `kind: 'incidental-learn-coach'`)：右栏 90s 小灶单轮盲测，独立升级掌握度至 `3/4 能复述`。
-   - `conversation.input.right`：顶部输入栏轻提醒胶囊（`顺带私教 · N 待消化`）。
+   - `sidebar.panellist` + `main` (`key: 'incidental-learn'`)：840px 单栏个人技能库、三步图文使用说明（0/0 空态直出、积累后可通过顶栏「使用说明」收放）、默认折叠的「效果预览」(`details` + `toolbar`) 与「后台自动存档」清单、15 分钟集中学、原生 `<dialog closedby="any">` 过关详情窗与零 Token 示例预览入口。
+   - `conversation.chat.markdown.fence` (`shield` / `learn-quiz` / `learn-pass`)：独立于 `foldCompletedTurns`，流式阶段平稳占位，定稿后就地交互；其中 `shield` 以「附 · 顺带补充」引导线 + 默认折叠柔和灰折起条呈现，未展开也同样静默写入后台存档。选项作答内置草稿保护（非空不覆盖）与空闲直发（`useInput` + `inputActions`）。
+   - `sidebarRightTabs` + `sidebar.right.pane.tab` (`id: '@oxmumu3/dsh-incidental-learn/coach'`, `kind: 'incidental-learn-coach'`)：右侧「顺带学习栏」边聊边学，独立升级掌握度至 `3/4 能复述`。
+   - `conversation.input.right`：顶部输入栏轻提醒胶囊（`顺带学习 · 已存 N 张`）。
    - `tool.call.toolview`：`learn_save`、`learn_checkpoint`、`learn_triage` 紧凑单行执行回执。
 2. **宿主侧能力 (`index.js` + `lib/`)**：
    - 原子多进程共享账本 (`$DSH_HOME/incidental-learn/ledger.json`)：支持 `mtimeMs` 外部变更合并、临时文件 + `renameSync` 原子落盘及 15 步撤销栈。
@@ -48,5 +48,5 @@ npm run pack:release # 生成可重现 .tgz 与 .sha256
 建议在退出当前运行的桌面端后通过官方 `dsh plugin` 安装离线包：
 
 ```bash
-dsh plugin --profile desktop add ./oxmumu3-dsh-incidental-learn-0.1.2.tgz
+dsh plugin --profile desktop add ./oxmumu3-dsh-incidental-learn-0.1.3.tgz
 ```

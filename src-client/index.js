@@ -315,15 +315,15 @@ function makeEvidenceDialog(React) {
             h('p', { style: { marginTop: '3px' } }, item.why),
           ) : null,
           item.rejected ? h('div', null,
-            h('div', { className: 'ilp-shield-k' }, '被排除的差方案'),
+            h('div', { className: 'ilp-shield-k' }, '避开的坑'),
             h('p', { style: { marginTop: '3px' } }, item.rejected),
           ) : null,
           item.probe ? h('div', { className: 'ilp-shield-probe' },
-            h('span', { className: 'ilp-shield-k', style: { marginRight: '6px' } }, '一句话摸底'),
+            h('span', { className: 'ilp-shield-k', style: { marginRight: '6px' } }, '顺手想一下'),
             item.probe,
           ) : null,
           item.evidenceSummary ? h('div', { className: 'ilp-drawer-fb' },
-            h('div', { className: 'ilp-shield-k' }, '人话版过关证据'),
+            h('div', { className: 'ilp-shield-k' }, '学习记录'),
             h('p', null, item.evidenceSummary),
           ) : null,
         ),
@@ -341,7 +341,7 @@ function makeEvidenceDialog(React) {
               if (props.onClose) props.onClose()
               if (props.onStartDrill) props.onStartDrill(chosen)
             },
-          }, '去原生会话重温 / 闯关'),
+          }, '去会话里展开练'),
         ),
       ) : null,
     )
@@ -356,7 +356,7 @@ function openStarterChatSession(ctx) {
   var uiWorkspace = getHostService(ctx, 'uiWorkspace')
   var sessions = getHostService(ctx, 'sessions')
   var conv = getHostService(ctx, 'conversations')
-  var starterPrompt = '帮我检查一下当前项目的结构与改动方案，如果有值得注意的工程、架构或前端设计取舍，干完顺手给我一张 4 行决策底牌。'
+  var starterPrompt = '帮我检查一下当前项目的结构与改动方案，如果遇到值得留心的工程、架构或前端设计经验，干完顺手附一张顺带学习卡。'
   return postLearnAction('ensure_practice_workspace', {}).catch(function () { return null }).then(function (res) {
     var wsId = (res && res.workspace && res.workspace.workspaceId) || undefined
     if (uiWorkspace && typeof uiWorkspace.openWorkspace === 'function' && wsId) {
@@ -374,70 +374,54 @@ function openStarterChatSession(ctx) {
   })
 }
 
-function makeFlowArrowSvg(h, size) {
-  var s = size || 14
-  return h('svg', {
-    className: 'ilp-vis-arrow-svg',
-    width: s,
-    height: s,
-    viewBox: '0 0 16 16',
-    fill: 'none',
-    stroke: 'currentColor',
-    strokeWidth: '1.6',
-    strokeLinecap: 'round',
-    strokeLinejoin: 'round',
-    'aria-hidden': 'true',
-  },
-    h('path', { d: 'M3 8h9' }),
-    h('path', { d: 'M9 4l4 4-4 4' }),
-  )
-}
-
-var SIM_ORDER = ['idle', 'coach', 'save', 'dismiss']
-var SIM_MODES = {
+var SIM_OUTCOMES = {
   idle: {
-    tabLabel: '全不按（静默兜底）',
-    winTag: '后台静默沉淀',
-    badgeClass: 'ilp-tag wait',
-    badgeText: '不打扰对话，也不丢',
-    cardTitle: '待分诊候选 +1（已自动去重）',
-    cardDesc: '列表容器滚动卡死：flex:1 与 min-height:0 的配合 · 来自 DSH 会话',
-    bullet1: '主对话区零插楼，未发完的草稿原样保留',
-    bullet2: '工作台静默记进「待分诊候选」，闲时随时挑着留或略过',
-    footerNote: '三个按钮全都不点也不会丢失：卡片会在本页下方静候分诊，等你闲下来再挑。',
+    chatBadge: '放在那没点',
+    chatBadgeClass: 'ilp-tag',
+    collapsed: false,
+    wbTitle: '顺带私教里',
+    wbBadge: '后台自动存档 +1',
+    wbBadgeClass: 'ilp-tag wait',
+    wbHeading: '自动收进「后台自动存档」',
+    wbLine1: '不用手动保存，卡片已经在后台静默存好',
+    wbLine2: '忙完手头的事，随时点进来集中翻看和学习',
+    takeaway: '正忙着干活时完全不用管它，后台会自动帮你存档，一条都不会丢。',
   },
   coach: {
-    tabLabel: '点「右侧接招 90s」',
-    winTag: '右侧 90s 小灶抽屉',
-    badgeClass: 'ilp-tag run',
-    badgeText: '不污染主对话',
-    cardTitle: '右栏当场小测一题（90s）',
-    cardDesc: '摸底：已经写了 overflow-y: auto，为什么还要补 min-height: 0？',
-    bullet1: '仅在右侧划开独立小灶面板，主对话流和草稿输入框纹丝不动',
-    bullet2: '用自己的话答完即给反馈，答对直接升格并写进台账',
-    footerNote: '适合当场有空花 90 秒立刻搞懂，省得下次写滚动列表继续踩同一个坑。',
+    chatBadge: '右侧展开学习',
+    chatBadgeClass: 'ilp-tag run',
+    collapsed: false,
+    wbTitle: '对话右侧学习栏',
+    wbBadge: '不影响当前聊天',
+    wbBadgeClass: 'ilp-tag run',
+    wbHeading: '在右边顺手把这个知识点聊透',
+    wbLine1: '只在右侧划开独立小窗口展开讲，不打乱原来的对话',
+    wbLine2: '花一两分钟弄明白，直接沉淀进你的个人技能库',
+    takeaway: '手头刚好有空时点一下，在右边花一两分钟直接把这条经验学明白。',
   },
   save: {
-    tabLabel: '点「直接收入路线」',
-    winTag: '能力路线台账',
-    badgeClass: 'ilp-tag run',
-    badgeText: '直通重点跟踪',
-    cardTitle: '已收入路线：前端布局与容器 [1/4 待巩固]',
-    cardDesc: '跳过待分诊inbox，直接进入你的长期能力路线',
-    bullet1: '优先排进工作台本周聚焦，提醒你补齐实战内化',
-    bullet2: '有空回台账点「开始 3 分钟闯关」，用自己的话复述过关',
-    footerNote: '适合正忙着赶当前任务，但觉得这条坑特别值钱、回头必练。',
+    chatBadge: '已加入重点',
+    chatBadgeClass: 'ilp-tag run',
+    collapsed: false,
+    wbTitle: '顺带私教里',
+    wbBadge: '标为重点待学',
+    wbBadgeClass: 'ilp-tag run',
+    wbHeading: '直接放进「重点学习清单」',
+    wbLine1: '觉得这条经验很实用，但眼下正忙，先标上重点',
+    wbLine2: '下次点进顺带私教时优先排在前面，方便集中去学',
+    takeaway: '适合眼下没空细看、但觉得这条经验很值钱，先标成重点留着集中学。',
   },
   dismiss: {
-    tabLabel: '点「已掌握，收起」',
-    winTag: '静默折叠完成',
-    badgeClass: 'ilp-tag ok',
-    badgeText: '已从待分诊移除',
-    cardTitle: '原卡片当场折叠成极简一行',
-    cardDesc: '同步从待分诊队列清出，同主题不再重复提醒',
-    bullet1: '会话界面立刻变清爽，不占用当前视口高度',
-    bullet2: '表明已经掌握，避免你熟悉的概念来回刷屏',
-    footerNote: '最利落的减噪手势：觉得这条早就烂熟于心，一键折叠并清出候选区。',
+    chatBadge: '已收起卡片',
+    chatBadgeClass: 'ilp-tag ok',
+    collapsed: true,
+    wbTitle: '顺带私教里',
+    wbBadge: '不再重复存档',
+    wbBadgeClass: 'ilp-tag ok',
+    wbHeading: '卡片折成窄条，后台也不再存它',
+    wbLine1: '对话里的卡片立刻折成一行，界面清清爽爽',
+    wbLine2: '说明这块你本来就会，以后同类问题不再重复提醒',
+    takeaway: '遇到你早就熟悉的内容点一下，当场收起不占地方，也不往存档里塞。',
   },
 }
 
@@ -448,256 +432,375 @@ function makeVisualGuideComponent(React) {
     var simTuple = React.useState('idle')
     var simMode = simTuple[0]
     var setSimMode = simTuple[1]
-    var activeSim = SIM_MODES[simMode] || SIM_MODES.idle
+    var toolbarRef = React.useRef(null)
+    var activeSim = SIM_OUTCOMES[simMode] || SIM_OUTCOMES.idle
+    var supportsFocusGroup = typeof HTMLElement !== 'undefined' && ('focusGroup' in HTMLElement.prototype)
 
-    function handleTabKeyDown(modeKey, e) {
-      var idx = SIM_ORDER.indexOf(modeKey)
-      var nextIdx = -1
-      if (e.key === 'ArrowRight') nextIdx = (idx + 1) % SIM_ORDER.length
-      else if (e.key === 'ArrowLeft') nextIdx = (idx - 1 + SIM_ORDER.length) % SIM_ORDER.length
-      else if (e.key === 'Home') nextIdx = 0
-      else if (e.key === 'End') nextIdx = SIM_ORDER.length - 1
-      if (nextIdx >= 0) {
+    React.useEffect(function () {
+      var bar = toolbarRef.current
+      if (!bar || typeof HTMLElement === 'undefined' || ('focusGroup' in HTMLElement.prototype)) return undefined
+      function onKeyDown(e) {
+        var btns = Array.prototype.slice.call(bar.querySelectorAll('button'))
+        var idx = btns.indexOf(document.activeElement)
+        if (idx === -1) return
+        var next = idx
+        if (e.key === 'ArrowRight') next = (idx + 1) % btns.length
+        else if (e.key === 'ArrowLeft') next = (idx - 1 + btns.length) % btns.length
+        else if (e.key === 'Home') next = 0
+        else if (e.key === 'End') next = btns.length - 1
+        else return
         e.preventDefault()
-        var nextKey = SIM_ORDER[nextIdx]
-        setSimMode(nextKey)
-        if (typeof document !== 'undefined') {
-          var nextEl = document.getElementById('ilp-sim-tab-' + nextKey)
-          if (nextEl && typeof nextEl.focus === 'function') nextEl.focus()
+        for (var i = 0; i < btns.length; i += 1) {
+          btns[i].tabIndex = i === next ? 0 : -1
         }
+        btns[next].focus()
       }
+      bar.addEventListener('keydown', onKeyDown)
+      return function () { bar.removeEventListener('keydown', onKeyDown) }
+    }, [])
+
+    function makeSimToolbarButton(modeKey, label, extraClass) {
+      var pressed = simMode === modeKey
+      return h('button', {
+        type: 'button',
+        className: 'ilp-sim-btn' + (extraClass ? (' ' + extraClass) : ''),
+        'data-testid': 'ilp-sim-btn-' + modeKey,
+        'aria-pressed': pressed ? 'true' : 'false',
+        tabIndex: supportsFocusGroup ? undefined : (pressed ? 0 : -1),
+        onClick: function () { setSimMode(modeKey) },
+      },
+        h('svg', {
+          className: 'ilp-sim-check',
+          width: 11,
+          height: 11,
+          viewBox: '0 0 16 16',
+          fill: 'none',
+          stroke: 'currentColor',
+          strokeWidth: '2.2',
+          strokeLinecap: 'round',
+          strokeLinejoin: 'round',
+          'aria-hidden': 'true',
+        }, h('path', { d: 'M3.5 8.5l3 3 6-7' })),
+        h('span', null, label),
+      )
     }
 
-    return h('div', { className: 'ilp-onb-stack', 'data-testid': 'ilp-visual-guide' },
-      // 1. Compact Visual Flow Hero
-      h('section', { className: 'ilp-vis-hero' },
-        h('div', { className: 'ilp-vis-hero-top' },
-          h('span', { className: 'ilp-tag run' }, isEmpty ? '新手图解 · 无需提前建档' : '机制图解 · 原台账数据保留不动'),
+    function makeConnectorSvg(key) {
+      return h('div', { key: key, className: 'ilp-step-connector ' + key, 'aria-hidden': 'true' },
+        h('span', { className: 'ilp-conn-badge' },
+          h('svg', {
+            width: 13,
+            height: 13,
+            viewBox: '0 0 16 16',
+            fill: 'none',
+            stroke: 'currentColor',
+            strokeWidth: '1.8',
+            strokeLinecap: 'round',
+            strokeLinejoin: 'round',
+          },
+            h('path', { d: 'M3.5 8h9' }),
+            h('path', { d: 'M9 4.5L12.5 8 9 11.5' }),
+          ),
+        ),
+      )
+    }
+
+    return h('div', {
+      className: 'ilp-guide-stack',
+      'data-testid': 'ilp-visual-guide',
+      'data-guide-mode': isEmpty ? 'empty' : 'accumulated',
+    },
+      // Tier 1: Open Editorial Hero
+      h('section', { className: 'ilp-hero' },
+        h('div', { className: 'ilp-hero-top' },
+          h('span', { className: 'ilp-hero-kicker' }, isEmpty ? '刚装好 · 一眼看懂怎么用' : '使用说明 · 看完可随时收起'),
           !isEmpty && props && props.onClose ? h('button', {
             type: 'button',
             className: 'ilp-btn ghost xs',
             'data-testid': 'ilp-close-guide-btn',
             onClick: props.onClose,
-          }, '收起图解') : null,
+          }, '收起说明') : null,
         ),
-        h('h2', { className: 'ilp-onb-lead' }, '平时照常派活零打扰，只在关键取舍顺手长本事'),
-        h('div', { className: 'ilp-vis-flow-pills', 'aria-label': '运作流程四步示意' },
-          h('span', { className: 'ilp-vis-pill' },
-            h('span', { className: 'ilp-vis-pill-num' }, '1'),
-            '正常对话派活',
-          ),
-          makeFlowArrowSvg(h, 14),
-          h('span', { className: 'ilp-vis-pill' },
-            h('span', { className: 'ilp-vis-pill-num' }, '2'),
-            '遇取舍自动亮底牌',
-          ),
-          makeFlowArrowSvg(h, 14),
-          h('span', { className: 'ilp-vis-pill' },
-            h('span', { className: 'ilp-vis-pill-num' }, '3'),
-            '点按钮或全不按',
-          ),
-          makeFlowArrowSvg(h, 14),
-          h('span', { className: 'ilp-vis-pill' },
-            h('span', { className: 'ilp-vis-pill-num' }, '4'),
-            '回台账 3 分钟闯关',
-          ),
-        ),
+        h('h2', { className: 'ilp-hero-lead' }, '平时跟 Agent 协作干活，顺带学点经验、沉淀自己的技能'),
+        h('p', { className: 'ilp-hero-sub' }, '不用专门抽空上课；你照常派活，遇到值得留心的经验，系统会顺手帮你攒下来。'),
         h('div', { className: 'ilp-onb-cta' },
           h('button', {
             type: 'button',
-            className: 'ilp-btn solid',
+            className: isEmpty ? 'ilp-btn solid' : 'ilp-btn line',
             'data-testid': 'ilp-start-chat-cta',
             onClick: function () { if (props && props.onStartChat) props.onStartChat() },
-          }, '去新会话派个活试试'),
+          },
+            h('svg', {
+              width: 14,
+              height: 14,
+              viewBox: '0 0 16 16',
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: '1.8',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+              'aria-hidden': 'true',
+            }, h('path', { d: 'M3 13l1.2-3.6L11.4 2.2a1.4 1.4 0 0 1 2 2L6.2 11.4 3 13z' })),
+            h('span', null, '去新会话派个活试试'),
+          ),
           isEmpty ? h('button', {
             type: 'button',
             className: 'ilp-btn line',
             'data-testid': 'ilp-load-samples-btn',
             onClick: function () { if (props && props.onLoadSamples) props.onLoadSamples() },
-          }, '预览填满后的账本效果') : null,
+          }, '看看攒下卡片后长什么样') : null,
         ),
       ),
 
-      // 2. 3 Subgrid-Aligned UI-Miniature Storyboard Cards (direct children only: scene -> header -> p)
-      h('div', { className: 'ilp-onb-steps' },
-        h('article', { className: 'ilp-onb-step' },
+      // Tier 2: Connected 3-Step Visual Storyboard (01 -> 02 -> 03 with subgrid)
+      h('div', { className: 'ilp-story-grid' },
+        h('article', { className: 'ilp-onb-step ilp-step-col-1' },
           h('div', { className: 'ilp-scene', 'aria-hidden': 'true' },
-            h('div', { className: 'ilp-mini-bubble' }, '帮我修一下列表滚动卡死'),
-            h('div', { className: 'ilp-mini-muted' }, '普通改字 / 查资料 -> 全程零打扰'),
-            h('div', { className: 'ilp-mini-card' },
-              h('span', { className: 'ilp-mini-k' }, '关键取舍自动亮牌'),
-              h('span', { className: 'ilp-mini-line' }, '4 行底牌 + 3 个快捷操作'),
+            h('div', { className: 'ilp-wf-user' },
+              h('span', { className: 'ilp-wf-u-pill' },
+                h('span', { className: 'ilp-wf-dot-role' }, '你'),
+                '帮修列表卡顿',
+              ),
+              h('span', { className: 'ilp-wf-quiet' }, '普通杂活不打扰'),
+            ),
+            h('div', { className: 'ilp-wf-card' },
+              h('div', { className: 'ilp-wf-card-head' },
+                h('span', null, '小学习卡'),
+                h('svg', {
+                  width: 11,
+                  height: 11,
+                  viewBox: '0 0 16 16',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: '1.7',
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round',
+                }, h('path', { d: 'M4 2.5h8a1 1 0 0 1 1 1v10.5l-5-3-5 3V3.5a1 1 0 0 1 1-1z' })),
+              ),
+              h('div', { className: 'ilp-wf-lines' },
+                h('span', { className: 'ilp-wf-skel w82' }),
+                h('span', { className: 'ilp-wf-skel w62' }),
+              ),
+              h('div', { className: 'ilp-wf-btn-row' },
+                h('span', { className: 'ilp-wf-mini-btn' }, '展开学习'),
+                h('span', { className: 'ilp-wf-mini-btn' }, '加入重点'),
+                h('span', { className: 'ilp-wf-mini-btn' }, '已掌握'),
+              ),
             ),
           ),
           h('header', { className: 'ilp-step-head' },
-            h('span', { className: 'ilp-onb-num' }, '01 · 对话中自动触发'),
-            h('h3', { className: 'ilp-onb-step-h' }, '只挑值得记的取舍亮牌'),
+            h('span', { className: 'ilp-onb-num' }, '01 · 平时派活'),
+            h('h3', { className: 'ilp-onb-step-h' }, '对话末尾附张小学习卡'),
           ),
-          h('p', { className: 'ilp-onb-step-p' }, '日常派活照常零打断；只有做出实质方案取舍时，回复末尾才附 4 行底牌。'),
+          h('p', { className: 'ilp-onb-step-p' }, '日常派活照常进行，遇到值得学的经验才附一张小卡片。'),
         ),
 
-        h('article', { className: 'ilp-onb-step' },
+        makeConnectorSvg('ilp-conn-col-1'),
+
+        h('article', { className: 'ilp-onb-step ilp-step-col-2' },
           h('div', { className: 'ilp-scene', 'aria-hidden': 'true' },
-            h('div', { className: 'ilp-mini-matrix' },
-              h('div', { className: 'ilp-mini-cell' }, h('b', null, '右侧接招 90s'), h('span', null, '开小灶测一题')),
-              h('div', { className: 'ilp-mini-cell' }, h('b', null, '直接收入路线'), h('span', null, '进路线重点练')),
-              h('div', { className: 'ilp-mini-cell' }, h('b', null, '已掌握收起'), h('span', null, '折叠并清候选')),
-              h('div', { className: 'ilp-mini-cell hi' }, h('b', null, '全都不按'), h('span', null, '静静入库不丢')),
+            h('div', { className: 'ilp-branch-diag' },
+              h('div', { className: 'ilp-branch-in' },
+                h('span', { className: 'ilp-branch-in-k' }, '看到卡片'),
+                h('div', { className: 'ilp-branch-dots' },
+                  h('span', null),
+                  h('span', null),
+                  h('span', null),
+                ),
+              ),
+              h('svg', {
+                className: 'ilp-branch-svg',
+                width: 22,
+                height: 72,
+                viewBox: '0 0 22 72',
+                fill: 'none',
+              },
+                h('path', { d: 'M0 36 C 9 36, 10 16, 20 16', stroke: 'var(--ilp-run)', strokeWidth: '1.5', strokeLinecap: 'round' }),
+                h('path', { d: 'M16.5 12.8 L20.5 16 L16.5 19.2', stroke: 'var(--ilp-run)', strokeWidth: '1.4', strokeLinecap: 'round', strokeLinejoin: 'round' }),
+                h('path', { d: 'M0 36 C 9 36, 10 56, 20 56', stroke: 'var(--ilp-wait)', strokeWidth: '1.6', strokeLinecap: 'round' }),
+                h('path', { d: 'M16.5 52.8 L20.5 56 L16.5 59.2', stroke: 'var(--ilp-wait)', strokeWidth: '1.5', strokeLinecap: 'round', strokeLinejoin: 'round' }),
+              ),
+              h('div', { className: 'ilp-branch-outs' },
+                h('div', { className: 'ilp-branch-pill' },
+                  h('b', null, '有空点一下'),
+                  h('span', null, '当场展开学习'),
+                ),
+                h('div', { className: 'ilp-branch-pill is-idle' },
+                  h('b', null, '先放那不管'),
+                  h('span', null, '后台自动存档 +1'),
+                ),
+              ),
             ),
           ),
           h('header', { className: 'ilp-step-head' },
-            h('span', { className: 'ilp-onb-num' }, '02 · 不按也不会丢'),
-            h('h3', { className: 'ilp-onb-step-h' }, '4 条去向随手点或先跳过'),
+            h('span', { className: 'ilp-onb-num' }, '02 · 忙时不点也没事'),
+            h('h3', { className: 'ilp-onb-step-h' }, '当场展开学，或先放着'),
           ),
-          h('p', { className: 'ilp-onb-step-p' }, '忙着干活一个按钮都不按也没关系，卡片会自动去重存进下方「待分诊候选」。'),
+          h('p', { className: 'ilp-onb-step-p' }, '有空就顺手点开看；正忙着干活不理它，后台也会自动存好。'),
         ),
 
-        h('article', { className: 'ilp-onb-step' },
+        makeConnectorSvg('ilp-conn-col-2'),
+
+        h('article', { className: 'ilp-onb-step ilp-step-col-3' },
           h('div', { className: 'ilp-scene', 'aria-hidden': 'true' },
-            h('div', { className: 'ilp-mini-chips' },
-              h('span', { className: 'ilp-mini-chip pri' }, 'DSH 会话'),
-              h('span', { className: 'ilp-mini-chip' }, 'Antigravity'),
-              h('span', { className: 'ilp-mini-chip' }, 'Codex CLI'),
+            h('div', { className: 'ilp-funnel-sources' },
+              h('span', { className: 'ilp-source-badge is-local' },
+                h('span', { className: 'ilp-source-dot' }),
+                'DSH',
+              ),
+              h('span', { className: 'ilp-source-badge' }, 'Antigravity'),
+              h('span', { className: 'ilp-source-badge' }, 'Codex'),
             ),
-            h('div', { className: 'ilp-mini-meter-box' },
-              h('div', { className: 'ilp-mini-step-meter' },
-                h('span', { className: 'ilp-mini-label' }, '之前'),
-                makeMasteryMeter(h, 1),
+            h('svg', {
+              className: 'ilp-funnel-svg',
+              viewBox: '0 0 220 18',
+              preserveAspectRatio: 'none',
+              fill: 'none',
+            },
+              h('path', { d: 'M30 0 C30 10, 110 7, 110 15', stroke: 'currentColor', strokeWidth: '1.2' }),
+              h('path', { d: 'M110 0 L110 15', stroke: 'currentColor', strokeWidth: '1.2' }),
+              h('path', { d: 'M190 0 C190 10, 110 7, 110 15', stroke: 'currentColor', strokeWidth: '1.2' }),
+              h('path', { d: 'M106 11 L110 16 L114 11', stroke: 'currentColor', strokeWidth: '1.3', strokeLinecap: 'round', strokeLinejoin: 'round' }),
+            ),
+            h('div', { className: 'ilp-delta-track' },
+              h('div', { className: 'ilp-delta-node' },
+                h('span', { className: 'ilp-meter', 'data-tier': '1' },
+                  h('span', { className: 'ilp-bars' }, h('span', null), h('span', null), h('span', null), h('span', null)),
+                  h('span', { className: 'ilp-delta-tag wait' }, '1/4 自动存好'),
+                ),
               ),
-              h('div', { className: 'ilp-mini-step-meter' },
-                h('span', { className: 'ilp-mini-label' }, '过关'),
-                makeMasteryMeter(h, 4),
+              h('div', { className: 'ilp-delta-mid' },
+                h('span', null, '有空回来看'),
+                h('svg', {
+                  width: 14,
+                  height: 10,
+                  viewBox: '0 0 14 10',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: '1.4',
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round',
+                },
+                  h('path', { d: 'M1 5h11' }),
+                  h('path', { d: 'M9 2l3 3-3 3' }),
+                ),
               ),
-              h('span', { className: 'ilp-mini-muted' }, '回台账 3 分钟用人话答对升级'),
+              h('div', { className: 'ilp-delta-node' },
+                h('span', { className: 'ilp-meter', 'data-tier': '4' },
+                  h('span', { className: 'ilp-bars' }, h('span', null), h('span', null), h('span', null), h('span', null)),
+                  h('span', { className: 'ilp-delta-tag ok' }, '4/4 变成技能'),
+                ),
+              ),
             ),
           ),
           h('header', { className: 'ilp-step-head' },
-            h('span', { className: 'ilp-onb-num' }, '03 · 回台账集中复盘'),
-            h('h3', { className: 'ilp-onb-step-h' }, '多端盲区汇总，答对才算会'),
+            h('span', { className: 'ilp-onb-num' }, '03 · 随时回来看'),
+            h('h3', { className: 'ilp-onb-step-h' }, '集中翻看，沉淀成技能'),
           ),
-          h('p', { className: 'ilp-onb-step-p' }, '不同 Agent 踩过的坑收进同一本台账；闲时点「3 分钟闯关」答对一次即升格。'),
+          h('p', { className: 'ilp-onb-step-p' }, '各处攒下的卡片都收在这里，闲时集中看懂，变成自己的本事。'),
         ),
       ),
 
-      // 3. Interactive Split-Window Scene Simulator
-      h('section', { className: 'ilp-onb-demo', 'data-testid': 'ilp-welcome-preview' },
-        h('div', { className: 'ilp-onb-demo-head' },
-          h('h3', { className: 'ilp-onb-step-h' }, '场景实景模拟器（点左侧卡片按钮或切换上方标签，零 Token）'),
-          h('span', { className: 'ilp-onb-demo-sub' }, '左右对照：会话末尾卡片 vs 实际落盘结果'),
+      // Tier 3: Default-Collapsed Native <details> + role="toolbar" focusgroup
+      h('details', { className: 'ilp-sim-disclosure', 'data-testid': 'ilp-welcome-preview' },
+        h('summary', { className: 'ilp-sim-summary', 'data-testid': 'ilp-sim-summary' },
+          h('span', { className: 'ilp-sim-summary-left' },
+            h('svg', {
+              className: 'ilp-summary-chevron',
+              width: 14,
+              height: 14,
+              viewBox: '0 0 16 16',
+              fill: 'none',
+              stroke: 'currentColor',
+              strokeWidth: '1.8',
+              strokeLinecap: 'round',
+              strokeLinejoin: 'round',
+              'aria-hidden': 'true',
+            }, h('path', { d: 'M6 3.5l4.5 4.5-4.5 4.5' })),
+            h('span', null, '想先试试卡片上的按钮点完会怎样？（点开体验）'),
+          ),
+          h('span', { className: 'ilp-tag' }, '点按实时预览'),
         ),
-        h('div', {
-          className: 'ilp-sim-tabs',
-          role: 'tablist',
-          'aria-label': '模拟对话卡片操作去向',
-          focusgroup: 'tablist nomemory',
-        },
-          SIM_ORDER.map(function (modeKey) {
-            var meta = SIM_MODES[modeKey]
-            var selected = simMode === modeKey
-            return h('button', {
-              key: modeKey,
-              type: 'button',
-              role: 'tab',
-              id: 'ilp-sim-tab-' + modeKey,
-              'data-testid': 'ilp-sim-tab-' + modeKey,
-              className: 'ilp-sim-tab',
-              'aria-selected': selected ? 'true' : 'false',
-              'aria-controls': 'ilp-sim-tabpanel',
-              tabIndex: selected ? 0 : -1,
-              focusgroupstart: selected ? '' : undefined,
-              onClick: function () { setSimMode(modeKey) },
-              onKeyDown: function (e) { handleTabKeyDown(modeKey, e) },
-            }, meta.tabLabel)
-          }),
-        ),
-        // [role="tabpanel"] stays strictly unstyled (no padding, borders, margins, backgrounds)
-        h('div', {
-          role: 'tabpanel',
-          id: 'ilp-sim-tabpanel',
-          'data-testid': 'ilp-sim-tabpanel',
-          'aria-labelledby': 'ilp-sim-tab-' + simMode,
-        },
-          h('div', { className: 'ilp-sim-stage' },
-            // Left: Mock Chat Conversation & 4-Line SHIELD Card
-            h('div', { className: 'ilp-mock-win' },
-              h('div', { className: 'ilp-mock-bar' },
-                h('span', { className: 'ilp-mock-title' },
-                  h('span', { className: 'ilp-mock-dot', 'aria-hidden': 'true' }),
-                  '原生对话窗 · 回复末尾自动附带',
+        h('div', { className: 'ilp-sim-body' },
+          h('div', {
+            ref: toolbarRef,
+            className: 'ilp-sim-toolbar',
+            role: 'toolbar',
+            'aria-label': '学习卡按钮效果预览',
+            'aria-controls': 'ilp-sim-outcome-stage',
+            focusgroup: 'toolbar wrap',
+          },
+            h('div', { className: 'ilp-sim-group', role: 'group', 'aria-label': '学习卡操作按钮' },
+              makeSimToolbarButton('coach', '当场展开学', ''),
+              makeSimToolbarButton('save', '加入重点学', ''),
+              makeSimToolbarButton('dismiss', '已掌握，收起', ''),
+            ),
+            h('span', { role: 'separator', 'aria-orientation': 'vertical', className: 'ilp-sim-sep' }),
+            makeSimToolbarButton('idle', '先放那不管（默认）', 'is-idle'),
+          ),
+          h('div', {
+            id: 'ilp-sim-outcome-stage',
+            className: 'ilp-sim-stage',
+            'data-testid': 'ilp-sim-outcome',
+            'data-mode': simMode,
+            'aria-live': 'polite',
+          },
+            h('div', { className: 'ilp-sim-mini-grid' },
+              h('div', { className: 'ilp-mini-win' },
+                h('div', { className: 'ilp-mini-win-bar' },
+                  h('span', null, '对话窗口里会怎样'),
+                  h('span', { className: activeSim.chatBadgeClass }, activeSim.chatBadge),
                 ),
-                h('span', { className: 'ilp-tag outline' }, '顺带私教卡片'),
+                h('div', { className: 'ilp-mini-win-body' },
+                  h('div', { className: 'ilp-mini-prose' }, 'AI 回复：列表滚动卡顿已经修好了，主要补了一行容器规则。'),
+                  h('div', { className: 'ilp-mini-embed', hidden: activeSim.collapsed },
+                    h('span', { className: 'ilp-mini-embed-title' }, 'flex:1 与 min-height:0 怎么配合才不卡'),
+                    h('div', { className: 'ilp-wf-lines' },
+                      h('span', { className: 'ilp-wf-skel w82' }),
+                      h('span', { className: 'ilp-wf-skel w62' }),
+                    ),
+                    h('div', { className: 'ilp-mini-embed-pills' },
+                      h('span', { className: 'ilp-mini-pill' + (simMode === 'coach' ? ' is-hi' : '') }, '在右侧边聊边学'),
+                      h('span', { className: 'ilp-mini-pill' + (simMode === 'save' ? ' is-hi' : '') }, '加入重点学'),
+                      h('span', { className: 'ilp-mini-pill' + (simMode === 'dismiss' ? ' is-hi' : '') }, '已掌握，收起'),
+                    ),
+                  ),
+                  h('div', { className: 'ilp-mini-collapsed', hidden: !activeSim.collapsed },
+                    h('span', null, '已掌握并收起：flex:1 与 min-height:0'),
+                    h('span', null, '重新展开'),
+                  ),
+                ),
               ),
-              h('div', { className: 'ilp-mock-chat' },
-                h('div', { className: 'ilp-mini-bubble' }, '列表滚动卡死已修好，主要改动在样式容器'),
-                h('div', { className: 'ilp-mock-card' },
-                  h('span', { className: 'ilp-card-title' }, 'flex:1 与 min-height:0 的配合'),
-                  h('div', { className: 'ilp-mock-facts' },
-                    h('div', null, h('strong', null, '为什么这么做'), 'Flex 子项默认 min-height: auto，补 min-height: 0 才允许内部滚动。'),
-                    h('div', null, h('strong', null, '被排除方案'), '写死 height: 600px 在窄屏分屏下会导致双滚动条或裁切。'),
-                  ),
-                  h('div', { className: 'ilp-mock-probe' },
-                    h('strong', { style: { marginRight: '6px' } }, '一句话摸底'),
-                    '已经写了 overflow-y: auto，为什么还要补 min-height: 0？',
-                  ),
-                  h('div', { className: 'ilp-sim-acts' },
-                    h('button', {
-                      type: 'button',
-                      className: 'ilp-sim-act-btn',
-                      'data-testid': 'ilp-sim-btn-coach',
-                      'data-active': simMode === 'coach' ? 'true' : 'false',
-                      onClick: function () { setSimMode('coach') },
-                    }, '右侧接招 90s'),
-                    h('button', {
-                      type: 'button',
-                      className: 'ilp-sim-act-btn',
-                      'data-testid': 'ilp-sim-btn-save',
-                      'data-active': simMode === 'save' ? 'true' : 'false',
-                      onClick: function () { setSimMode('save') },
-                    }, '直接收入路线'),
-                    h('button', {
-                      type: 'button',
-                      className: 'ilp-sim-act-btn',
-                      'data-testid': 'ilp-sim-btn-dismiss',
-                      'data-active': simMode === 'dismiss' ? 'true' : 'false',
-                      onClick: function () { setSimMode('dismiss') },
-                    }, '已掌握，收起'),
-                  ),
-                  h('div', { className: 'ilp-sim-idle-hint' },
-                    h('span', null, '点击上方任意按钮预演，或：'),
-                    h('button', {
-                      type: 'button',
-                      className: 'ilp-btn ghost xs',
-                      'data-testid': 'ilp-sim-btn-idle',
-                      onClick: function () { setSimMode('idle') },
-                    }, simMode === 'idle' ? '当前正演示：三个都不按' : '切回演示：三个都不按'),
+              h('div', { className: 'ilp-sim-arrow', 'aria-hidden': 'true' },
+                h('svg', {
+                  width: 16,
+                  height: 16,
+                  viewBox: '0 0 16 16',
+                  fill: 'none',
+                  stroke: 'currentColor',
+                  strokeWidth: '1.6',
+                  strokeLinecap: 'round',
+                  strokeLinejoin: 'round',
+                },
+                  h('path', { d: 'M3 8h9' }),
+                  h('path', { d: 'M9 4l4 4-4 4' }),
+                ),
+              ),
+              h('div', { className: 'ilp-mini-win' },
+                h('div', { className: 'ilp-mini-win-bar' },
+                  h('span', null, activeSim.wbTitle),
+                  h('span', { className: activeSim.wbBadgeClass }, activeSim.wbBadge),
+                ),
+                h('div', { className: 'ilp-mini-win-body' },
+                  h('div', { className: 'ilp-mini-embed' },
+                    h('span', { className: 'ilp-mini-embed-title' }, activeSim.wbHeading),
+                    h('span', { style: { fontSize: '11.5px', color: 'var(--ilp-ink2)' } }, activeSim.wbLine1),
+                    h('span', { style: { fontSize: '11px', color: 'var(--ilp-ink3)' } }, activeSim.wbLine2),
                   ),
                 ),
               ),
             ),
-
-            // Center Arrow
-            h('div', { className: 'ilp-sim-conn', 'aria-hidden': 'true' },
-              makeFlowArrowSvg(h, 18),
-            ),
-
-            // Right: Live Outcome Window
-            h('div', { className: 'ilp-mock-win', 'data-testid': 'ilp-sim-outcome', 'data-mode': simMode },
-              h('div', { className: 'ilp-mock-bar' },
-                h('span', { className: 'ilp-mock-title' }, activeSim.winTag),
-                h('span', { className: activeSim.badgeClass }, activeSim.badgeText),
-              ),
-              h('div', { className: 'ilp-outcome-panel' },
-                h('div', { className: 'ilp-outcome-box' },
-                  h('div', { className: 'ilp-outcome-k' }, activeSim.cardTitle),
-                  h('p', { className: 'ilp-outcome-p' }, activeSim.cardDesc),
-                ),
-                h('div', { className: 'ilp-mock-facts' },
-                  h('div', null, '1. ' + activeSim.bullet1),
-                  h('div', null, '2. ' + activeSim.bullet2),
-                ),
-                h('div', { className: 'ilp-outcome-note' }, activeSim.footerNote),
-              ),
-            ),
+            h('p', { className: 'ilp-sim-takeaway' }, activeSim.takeaway),
           ),
         ),
       ),
@@ -880,18 +983,18 @@ function makeWorkbenchComponent(React, ctx, bridge) {
     if (!snap) {
       return h('div', { className: 'ilp-wb' },
         h('div', { className: 'ilp-wb-inner' },
-          h('div', { className: 'ilp-eyebrow' }, 'SHIELD · 跨 AGENT 技能内化台账'),
+          h('div', { className: 'ilp-eyebrow' }, '平时协作攒经验 · 个人技能库'),
           h('h1', { className: 'ilp-h1' }, '顺带私教'),
           bridgeState.error
             ? h('div', { className: 'ilp-empty-card' },
-                h('p', null, '读取账本失败：' + bridgeState.error),
+                h('p', null, '读取个人技能库失败：' + bridgeState.error),
                 h('button', {
                   type: 'button',
                   className: 'ilp-btn line sm',
                   onClick: function () { bridge.refresh(true).catch(function () {}) },
                 }, '重试'),
               )
-            : h('p', { className: 'ilp-summary' }, '正在同步本地账本…'),
+            : h('p', { className: 'ilp-summary' }, '正在同步本地记录…'),
         ),
       )
     }
@@ -907,13 +1010,14 @@ function makeWorkbenchComponent(React, ctx, bridge) {
         // Calm Header
         h('header', { className: 'ilp-header' },
           h('div', { className: 'ilp-toprow' },
-            h('span', { className: 'ilp-eyebrow' }, 'SHIELD · 跨 AGENT 技能内化台账'),
+            h('span', { className: 'ilp-eyebrow' }, '平时协作攒经验 · 个人技能库'),
             h('div', { className: 'ilp-header-acts' },
               stats.totalItems > 0 ? h('button', {
                 type: 'button',
                 className: 'ilp-btn line sm',
+                'data-testid': 'ilp-course-toggle-btn',
                 onClick: handleBuildCourse,
-              }, courseOpen ? '收起 15 分钟闯关课' : '15 分钟闯关课') : null,
+              }, courseOpen ? '收起 15 分钟集中学' : '15 分钟集中学') : null,
               stats.totalItems > 0 ? h('button', {
                 type: 'button',
                 className: 'ilp-btn line sm',
@@ -929,7 +1033,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           h('div', { className: 'ilp-title-row' },
             h('h1', { className: 'ilp-h1' }, '顺带私教'),
             h('span', { className: 'ilp-summary' },
-              '已内化 ' + stats.masteredItems + ' / ' + stats.totalItems + ' 项 · ' + stats.trackCount + ' 条路线 · 待分诊 ' + stats.triageCount + ' 条',
+              '已掌握 ' + stats.masteredItems + ' / ' + stats.totalItems + ' 项 · ' + stats.trackCount + ' 类技能 · 后台自动存档 ' + stats.triageCount + ' 张',
             ),
             !isCompletelyEmpty ? h('button', {
               type: 'button',
@@ -937,21 +1041,21 @@ function makeWorkbenchComponent(React, ctx, bridge) {
               'data-testid': 'ilp-toggle-guide-btn',
               'aria-expanded': guideOpen ? 'true' : 'false',
               onClick: function () { setGuideOpen(function (v) { return !v }) },
-            }, guideOpen ? '收起图解' : '机制图解') : null,
+            }, guideOpen ? '收起说明' : '使用说明') : null,
           ),
         ),
 
         isPreviewSamples && stats.totalItems > 0 ? h('div', { className: 'ilp-preview-banner', 'data-testid': 'ilp-preview-banner' },
-          h('span', null, '当前展示的是示例账本（不耗 Token）。体验完随时恢复 0/0 空台账，再在平时对话里慢慢攒自己的盲区。'),
+          h('span', null, '当前展示的是示例效果（不耗 Token）。看完可随时恢复初始空页面，再在平时对话里慢慢攒自己的技能库。'),
           h('button', {
             type: 'button',
             className: 'ilp-btn line xs',
             'data-testid': 'ilp-clear-preview-btn',
             onClick: handleResetEmpty,
-          }, '清空示例，恢复空台账'),
+          }, '恢复初始空页面'),
         ) : null,
 
-        // Visual Onboarding / On-Demand Mechanism Guide
+        // Visual Onboarding / On-Demand Usage Guide
         (isCompletelyEmpty || guideOpen)
           ? (isCompletelyEmpty
               ? h('div', { 'data-testid': 'ilp-empty-onboarding' },
@@ -977,14 +1081,14 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           : null,
 
         stats.totalItems === 0 && triage.length > 0 ? h('div', { className: 'ilp-onb-triage-tip', 'data-testid': 'ilp-empty-triage-tip' },
-          '能力路线目前 0 条，但下面已自动帮你接住对话里出现的候选取舍：点「收入路线」就正式开始追踪，点「略过」则直接清掉。',
+          '个人技能库目前 0 项，但下方已自动帮你接住平时对话里出现的顺带学习卡：点「加入重点学」就开始跟踪练习，点「跳过」则直接清掉。',
         ) : null,
 
         // Single Spotlight Hero Card
         spotlight ? h('section', { className: 'ilp-spot-card', 'data-testid': 'ilp-spotlight' },
           h('div', { className: 'ilp-spot-main' },
             h('div', { className: 'ilp-spot-eyebrow' },
-              h('span', { className: 'ilp-tag wait' }, '今日头号盲区'),
+              h('span', { className: 'ilp-tag wait' }, '优先待学'),
               sourceTag(h, spotlight.source),
               epistemicTag(h, spotlight.epistemic),
               makeMasteryMeter(h, spotlight.masteryTier),
@@ -992,7 +1096,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
             h('div', { className: 'ilp-spot-title' }, spotlight.title),
             spotlight.why ? h('p', { className: 'ilp-spot-desc' }, spotlight.why) : null,
             spotlight.probe ? h('div', { className: 'ilp-spot-probe' },
-              h('span', { className: 'ilp-shield-k', style: { marginRight: '6px' } }, '一句话摸底'),
+              h('span', { className: 'ilp-shield-k', style: { marginRight: '6px' } }, '顺手想一下'),
               spotlight.probe,
             ) : null,
           ),
@@ -1002,17 +1106,17 @@ function makeWorkbenchComponent(React, ctx, bridge) {
               className: 'ilp-btn solid',
               'data-testid': 'ilp-start-deep-learn',
               onClick: function () { handleStartDeepDrill(spotlight) },
-            }, '开始 3 分钟闯关'),
+            }, '开始 3 分钟展开学'),
             h('button', {
               type: 'button',
               className: 'ilp-btn line sm',
               'data-testid': 'ilp-open-evidence-modal',
               onClick: function () { setModalItem(spotlight) },
-            }, '看底牌解析'),
+            }, '看卡片解析'),
           ),
         ) : null,
 
-        // 1-Line Default-Collapsed Triage Inbox
+        // 1-Line Default-Collapsed Background Auto-Archive
         triage.length > 0 ? h('section', { className: 'ilp-triage-box', 'data-testid': 'ilp-triage-box' },
           h('button', {
             type: 'button',
@@ -1022,27 +1126,27 @@ function makeWorkbenchComponent(React, ctx, bridge) {
             onClick: function () { setTriageOpen(!triageOpen) },
           },
             h('span', { className: 'ilp-triage-head-left' },
-              h('span', { className: 'ilp-tag ' + (snap.triageOverCap ? 'wait' : 'outline') }, '待分诊候选 · ' + triage.length + ' 条'),
-              h('span', { className: 'ilp-summary' }, snap.triageOverCap ? '候选超过 5 条，建议批量收口防止死队列' : '来自各 Agent 的取舍候选，确认后再正式入账'),
+              h('span', { className: 'ilp-tag ' + (snap.triageOverCap ? 'wait' : 'outline') }, '后台自动存档 · ' + triage.length + ' 张'),
+              h('span', { className: 'ilp-summary' }, snap.triageOverCap ? '待看卡片超过 5 张，建议批量清理或全部加入' : '平时对话里先放着没点的学习卡，都自动帮你存在这里'),
             ),
-            h('span', { className: 'ilp-btn ghost xs' }, triageOpen ? '收起' : '展开分诊'),
+            h('span', { className: 'ilp-btn ghost xs' }, triageOpen ? '收起' : '展开查看'),
           ),
           triageOpen ? h('div', { className: 'ilp-triage-body' },
             triage.length > 5 ? h('div', { className: 'ilp-triage-batch', 'data-testid': 'ilp-triage-batch' },
-              h('span', { style: { fontSize: '12px', fontWeight: 600 } }, '收件箱防积灰提醒：当前 ' + triage.length + ' 条待分诊'),
+              h('span', { style: { fontSize: '12px', fontWeight: 600 } }, '整理提醒：后台共自动存了 ' + triage.length + ' 张待看卡片'),
               h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
                 h('button', {
                   type: 'button',
                   className: 'ilp-btn line xs',
                   'data-testid': 'ilp-batch-sweep-low',
                   onClick: function () { handleTriageBatch('sweep_low_value') },
-                }, '清理低价值候选'),
+                }, '清理细碎卡片'),
                 h('button', {
                   type: 'button',
                   className: 'ilp-btn solid xs',
                   'data-testid': 'ilp-batch-accept-all',
                   onClick: function () { handleTriageBatch('accept_all') },
-                }, '一键收入对应路线'),
+                }, '全部加入重点学'),
               ),
             ) : null,
             triage.map(function (cand) {
@@ -1051,7 +1155,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
                   h('div', { className: 'ilp-item-badges' },
                     sourceTag(h, cand.source),
                     epistemicTag(h, cand.epistemic),
-                    cand.lowValue ? h('span', { className: 'ilp-tag outline' }, '低价值微调') : null,
+                    cand.lowValue ? h('span', { className: 'ilp-tag outline' }, '细碎小修') : null,
                   ),
                   h('div', { className: 'ilp-triage-title' }, cand.title),
                   cand.why ? h('div', { className: 'ilp-triage-why' }, cand.why) : null,
@@ -1062,24 +1166,24 @@ function makeWorkbenchComponent(React, ctx, bridge) {
                     className: 'ilp-btn line xs',
                     'data-testid': 'ilp-triage-accept-' + cand.id,
                     onClick: function () { handleTriageOne(cand.id, 'accept') },
-                  }, '收入路线'),
+                  }, '加入重点学'),
                   h('button', {
                     type: 'button',
                     className: 'ilp-btn ghost xs',
                     'data-testid': 'ilp-triage-skip-' + cand.id,
                     onClick: function () { handleTriageOne(cand.id, 'skip') },
-                  }, '略过'),
+                  }, '跳过'),
                 ),
               )
             }),
           ) : null,
         ) : null,
 
-        // Optional 15-Minute Micro-Course View
+        // Optional 15-Minute Focus Study View
         courseOpen && activeCourse ? h('section', { className: 'ilp-course-box', 'data-testid': 'ilp-course-box' },
           h('div', { className: 'ilp-toprow' },
             h('div', null,
-              h('span', { className: 'ilp-tag run' }, '15 分钟闯关课'),
+              h('span', { className: 'ilp-tag run' }, '15 分钟集中学'),
               h('span', { style: { fontWeight: 600, marginLeft: '8px' } }, activeCourse.trackTitle + ' · 3 站串联'),
             ),
             activeCourse.stations && activeCourse.stations[0] ? h('button', {
@@ -1116,9 +1220,9 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           h('pre', { className: 'ilp-code-pre', style: { maxHeight: '160px', overflowY: 'auto' } }, exportInfo.markdown),
         ) : null,
 
-        // Accordion Capability Tracks (Track 1 open by default; 2 & 3 collapsed)
+        // Accordion Skill Categories (Category 1 open by default; 2 & 3 collapsed)
         tracks.length > 0 && !isCompletelyEmpty ? h('section', { className: 'ilp-tracks', 'data-testid': 'ilp-tracks' },
-          h('div', { className: 'ilp-section-label' }, '能力路线账本（4 格掌握度 + 可查过关证据）'),
+          h('div', { className: 'ilp-section-label' }, '沉淀下来的技能分类（可随时查看学习记录）'),
           tracks.map(function (track) {
             var isOpen = !!expandedTracks[track.id]
             return h('div', { key: track.id, className: 'ilp-track', 'data-testid': 'ilp-track-' + track.id },
@@ -1134,7 +1238,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
                 ),
                 h('div', { className: 'ilp-track-right' },
                   h('span', { className: 'ilp-tag ' + (track.masteredCount >= track.totalCount && track.totalCount > 0 ? 'ok' : 'outline') },
-                    track.masteredCount + ' / ' + track.totalCount + ' 已内化',
+                    track.masteredCount + ' / ' + track.totalCount + ' 已掌握',
                   ),
                   h('span', { style: { fontSize: '12px', color: 'var(--ilp-ink3)' } }, isOpen ? '收起' : '展开'),
                 ),
@@ -1142,7 +1246,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
               isOpen ? h('div', { className: 'ilp-track-list' },
                 track.items.length === 0
                   ? h('div', { className: 'ilp-item-row' },
-                      h('span', { className: 'ilp-summary' }, '该路线暂无条目，可在会话底牌点「直接收入路线」或从待分诊候选收入。'),
+                      h('span', { className: 'ilp-summary' }, '该分类暂无条目，可在对话学习卡点「加入重点学」或从后台自动存档加入。'),
                     )
                   : track.items.map(function (item) {
                       return h('div', { key: item.id, className: 'ilp-item-row', 'data-testid': 'ilp-item-' + item.id },
@@ -1164,12 +1268,12 @@ function makeWorkbenchComponent(React, ctx, bridge) {
                             type: 'button',
                             className: 'ilp-btn line xs',
                             onClick: function () { setModalItem(item) },
-                          }, '过关证据'),
+                          }, '学习记录'),
                           h('button', {
                             type: 'button',
                             className: 'ilp-btn soft xs',
                             onClick: function () { handleStartDeepDrill(item) },
-                          }, '闯关'),
+                          }, '展开学'),
                         ),
                       )
                     }),
@@ -1178,8 +1282,9 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           }),
         ) : null,
 
-        // Undo Toast
+        // Undo Toast (calm panel surface + green dot)
         toast ? h('div', { className: 'ilp-toast', role: 'status', 'data-testid': 'ilp-toast' },
+          h('span', { className: 'ilp-toast-dot', 'aria-hidden': 'true' }),
           h('span', null, toast.text),
           toast.canUndo ? h('button', {
             type: 'button',
@@ -1188,6 +1293,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           }, '撤销') : null,
           h('button', {
             type: 'button',
+            'data-testid': 'ilp-toast-close',
             onClick: function () { setToast(null) },
           }, '关闭'),
         ) : null,
@@ -1202,7 +1308,43 @@ function makeWorkbenchComponent(React, ctx, bridge) {
   }
 }
 
-// 3a. Markdown Fence: `shield` (4-Line Decision Card)
+function bookmarkSvg(h) {
+  return h('svg', {
+    width: '11',
+    height: '11',
+    viewBox: '0 0 12 12',
+    fill: 'none',
+    'aria-hidden': 'true',
+  },
+    h('path', {
+      d: 'M3.25 1.75H8.75C9.02614 1.75 9.25 1.97386 9.25 2.25V10.25L6 8.35L2.75 10.25V2.25C2.75 1.97386 2.97386 1.75 3.25 1.75Z',
+      stroke: 'currentColor',
+      strokeWidth: '1.2',
+      strokeLinejoin: 'round',
+    }),
+  )
+}
+
+function chevronDownSvg(h) {
+  return h('svg', {
+    className: 'ilp-strip-chevron',
+    width: '12',
+    height: '12',
+    viewBox: '0 0 12 12',
+    fill: 'none',
+    'aria-hidden': 'true',
+  },
+    h('path', {
+      d: 'M3 4.5L6 7.5L9 4.5',
+      stroke: 'currentColor',
+      strokeWidth: '1.4',
+      strokeLinecap: 'round',
+      strokeLinejoin: 'round',
+    }),
+  )
+}
+
+// 3a. Markdown Fence: `shield` (Option A Muted-Gray Collapsible Postscript Strip)
 function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
   return function ShieldFence(props) {
     var h = React.createElement
@@ -1214,9 +1356,19 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
     var expandedOverride = expandedOverrideTuple[0]
     var setExpandedOverride = expandedOverrideTuple[1]
 
+    var openAfterRestoreTuple = React.useState(false)
+    var openAfterRestore = openAfterRestoreTuple[0]
+    var setOpenAfterRestore = openAfterRestoreTuple[1]
+
+    var savedLocalTuple = React.useState(false)
+    var savedLocal = savedLocalTuple[0]
+    var setSavedLocal = savedLocalTuple[1]
+
     var feedbackTuple = React.useState(null)
     var feedback = feedbackTuple[0]
     var setFeedback = feedbackTuple[1]
+
+    var detailsRef = React.useRef(null)
 
     var isStreaming = Boolean(props && props.streaming)
     var parsed = isStreaming ? null : parseShieldFence(props && props.code)
@@ -1225,6 +1377,12 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
     var dismissedList = (snap && snap.dismissedCardKeys) || []
     var autoCapturedList = (snap && snap.autoCapturedKeys) || []
     var isDismissed = !!(parsed && !expandedOverride && dismissedList.indexOf(cardKey) >= 0)
+    var explicitInSnap = Boolean(
+      parsed && snap && Array.isArray(snap.items) && snap.items.some(function (it) {
+        return it && it.title === parsed.title && it.epistemic === 'explicit'
+      }),
+    )
+    var isCaptured = Boolean(savedLocal || explicitInSnap)
 
     React.useEffect(function () {
       ensureStyleInjected()
@@ -1249,11 +1407,25 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
       })
     }, [isStreaming, cardKey, isDismissed])
 
+    React.useEffect(function () {
+      if (openAfterRestore && !isDismissed && detailsRef && detailsRef.current) {
+        detailsRef.current.open = true
+        setOpenAfterRestore(false)
+      }
+    }, [openAfterRestore, isDismissed])
+
+    var psHeader = h('div', { className: 'ilp-ps-head' },
+      h('span', { className: 'ilp-ps-label' }, '附 · 顺带补充（非本轮主回复）'),
+      h('span', { className: 'ilp-ps-line', 'aria-hidden': 'true' }),
+      h('span', { className: 'ilp-ps-archive' }, '后台已自动存档，忙时不用管'),
+    )
+
     if (isStreaming) {
-      return h('div', { className: 'ilp-fence' },
-        h('div', { className: 'ilp-card streaming', 'data-testid': 'ilp-shield-streaming' },
-          h('span', { className: 'ilp-summary' }, '顺带私教 · 正在整理本轮决策底牌…'),
-          h('span', { className: 'ilp-tag outline' }, 'SHIELD'),
+      return h('div', { className: 'ilp-fence is-shield' },
+        psHeader,
+        h('div', { className: 'ilp-strip-streaming', 'data-testid': 'ilp-shield-streaming' },
+          h('span', { className: 'ilp-badge-card' }, bookmarkSvg(h), '顺带学习卡'),
+          h('span', { className: 'ilp-strip-topic' }, '正在顺手记下这轮的关键做法…'),
         ),
       )
     }
@@ -1263,17 +1435,20 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
     }
 
     if (isDismissed) {
-      return h('div', { className: 'ilp-fence' },
-        h('div', { className: 'ilp-card collapsed' },
-          h('span', { className: 'ilp-summary' }, '决策底牌已掌握收起：' + parsed.title),
+      return h('div', { className: 'ilp-fence is-shield' },
+        psHeader,
+        h('div', { className: 'ilp-dismissed-strip' },
+          h('span', { className: 'ilp-strip-topic' }, '已学会收起：' + parsed.title),
           h('button', {
             type: 'button',
-            className: 'ilp-btn ghost xs',
+            className: 'ilp-quiet-btn is-ghost',
+            'data-testid': 'ilp-shield-restore-btn',
             onClick: function () {
               setExpandedOverride(true)
+              setOpenAfterRestore(true)
               bridge.runAction('dismiss_card', { cardKey: cardKey, title: parsed.title, restore: true }).catch(function () {})
             },
-          }, '展开'),
+          }, '重新展开'),
         ),
       )
     }
@@ -1289,7 +1464,7 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
           },
         })
       } else {
-        setFeedback('右侧栏服务未就绪')
+        setFeedback('右侧栏暂未就绪')
       }
     }
 
@@ -1298,66 +1473,80 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
       bridge.runAction('save_explicit', {
         payload: Object.assign({}, parsed, { epistemic: 'explicit' }),
       }).then(function (res) {
+        setSavedLocal(true)
         if (res && res.created === false) {
-          setFeedback('该条已在能力路线中')
+          setFeedback('已在重点清单中')
         } else {
-          setFeedback('已直接收入能力路线')
+          setFeedback('已标为重点待学，去顺带私教可复习')
         }
       }).catch(function (err) {
-        setFeedback('收入失败：' + err.message)
+        setFeedback('保存失败：' + err.message)
       })
     }
 
     function handleDismiss() {
       setExpandedOverride(false)
+      setOpenAfterRestore(false)
       AUTO_CAPTURED_KEYS.add(cardKey)
       bridge.runAction('dismiss_card', { cardKey: cardKey, title: parsed.title, restore: false }).catch(function () {})
     }
 
-    return h('div', { className: 'ilp-fence' },
-      h('article', { className: 'ilp-card', 'data-testid': 'ilp-shield-card', 'data-card-key': cardKey },
-        h('div', { className: 'ilp-card-head' },
-          h('span', { className: 'ilp-card-title' }, parsed.title),
-          h('div', { className: 'ilp-item-badges' },
-            h('span', { className: 'ilp-tag outline' }, '决策底牌'),
-            sourceTag(h, parsed.source),
-            epistemicTag(h, parsed.epistemic),
+    return h('div', { className: 'ilp-fence is-shield' },
+      psHeader,
+      h('details', {
+        className: 'ilp-strip-details',
+        ref: detailsRef,
+        'data-testid': 'ilp-shield-card',
+        'data-card-key': cardKey,
+      },
+        h('summary', { className: 'ilp-strip-summary', 'data-testid': 'ilp-strip-summary' },
+          h('span', { className: 'ilp-strip-left' },
+            chevronDownSvg(h),
+            h('span', { className: 'ilp-badge-card' }, bookmarkSvg(h), '顺带学习卡'),
+            h('span', { className: 'ilp-strip-topic' }, parsed.title),
+          ),
+          h('span', { className: 'ilp-strip-hint' },
+            h('span', { className: 'ilp-hint-closed' }, '点开复习'),
+            h('span', { className: 'ilp-hint-open' }, '收起'),
           ),
         ),
-        h('div', { className: 'ilp-shield-grid' },
-          h('div', { className: 'ilp-shield-row' },
-            h('span', { className: 'ilp-shield-k' }, '为什么这么做'),
-            h('span', { className: 'ilp-shield-v' }, parsed.why),
+        h('div', { className: 'ilp-strip-body' },
+          h('div', { className: 'ilp-facts-compact' },
+            h('div', null,
+              h('span', { className: 'ilp-fact-k' }, '为什么这么做：'),
+              parsed.why,
+            ),
+            h('div', null,
+              h('span', { className: 'ilp-fact-k' }, '避开的坑：'),
+              parsed.rejected,
+            ),
+            h('div', { className: 'ilp-probe-inline' },
+              h('span', { className: 'ilp-fact-k' }, '顺手想一下：'),
+              parsed.probe,
+            ),
           ),
-          h('div', { className: 'ilp-shield-row' },
-            h('span', { className: 'ilp-shield-k' }, '被排除的差方案'),
-            h('span', { className: 'ilp-shield-v' }, parsed.rejected),
+          h('div', { className: 'ilp-acts-quiet' },
+            h('button', {
+              type: 'button',
+              className: 'ilp-quiet-btn is-soft-accent',
+              'data-testid': 'ilp-shield-coach-btn',
+              onClick: handleOpenCoach,
+            }, '在右侧边聊边学'),
+            h('button', {
+              type: 'button',
+              className: 'ilp-quiet-btn',
+              'data-testid': 'ilp-shield-capture-btn',
+              'aria-pressed': isCaptured ? 'true' : 'false',
+              onClick: handleSaveDirect,
+            }, isCaptured ? '已在重点清单' : '加入重点学'),
+            h('button', {
+              type: 'button',
+              className: 'ilp-quiet-btn is-ghost',
+              'data-testid': 'ilp-shield-dismiss-btn',
+              onClick: handleDismiss,
+            }, '已掌握，收起'),
+            feedback ? h('span', { className: 'ilp-card-receipt', 'data-testid': 'ilp-shield-feedback' }, feedback) : null,
           ),
-          h('div', { className: 'ilp-shield-probe' },
-            h('span', { className: 'ilp-shield-k', style: { marginRight: '6px' } }, '一句话摸底'),
-            parsed.probe,
-          ),
-        ),
-        h('div', { className: 'ilp-card-acts' },
-          h('button', {
-            type: 'button',
-            className: 'ilp-btn solid sm',
-            'data-testid': 'ilp-shield-coach-btn',
-            onClick: handleOpenCoach,
-          }, '右侧接招 90s'),
-          h('button', {
-            type: 'button',
-            className: 'ilp-btn line sm',
-            'data-testid': 'ilp-shield-capture-btn',
-            onClick: handleSaveDirect,
-          }, '直接收入路线'),
-          h('button', {
-            type: 'button',
-            className: 'ilp-btn ghost sm',
-            'data-testid': 'ilp-shield-dismiss-btn',
-            onClick: handleDismiss,
-          }, '已掌握，收起'),
-          feedback ? h('span', { className: 'ilp-status-note', 'data-testid': 'ilp-shield-feedback' }, feedback) : null,
         ),
       ),
     )
@@ -1540,7 +1729,7 @@ function makeLearnPassFenceComponent(React, ctx, bridge) {
       h('article', { className: 'ilp-card pass', 'data-testid': 'ilp-learn-pass-card' },
         h('div', { className: 'ilp-card-head' },
           h('span', { className: 'ilp-card-title' }, pass.title),
-          h('span', { className: 'ilp-tag ok' }, '闯关过关 · 掌握度升格'),
+          h('span', { className: 'ilp-tag ok' }, '学懂过关 · 掌握度提升'),
         ),
         h('div', { className: 'ilp-item-badges' },
           h('span', { className: 'ilp-tag outline' }, pass.trackTitle),
@@ -1564,7 +1753,7 @@ function makeLearnPassFenceComponent(React, ctx, bridge) {
                 layout.selectPanel(PANEL_KEY)
               }
             },
-          }, '回顺带私教看路线'),
+          }, '回个人技能库'),
           h('button', {
             type: 'button',
             className: 'ilp-btn line sm',
@@ -1618,8 +1807,8 @@ function makeCoachDrawerComponent(React, ctx, bridge, coachStore) {
     if (!card) {
       return h('div', { className: 'ilp-drawer', 'data-testid': 'ilp-coach-drawer-empty' },
         h('div', { className: 'ilp-drawer-box' },
-          h('div', { className: 'ilp-card-title' }, '90s 小灶'),
-          h('p', { className: 'ilp-summary' }, '从对话中的决策底牌卡点「右侧接招 90s」，即可在这里完成单轮盲测点拨，不打断主对话草稿。'),
+          h('div', { className: 'ilp-card-title' }, '顺带学习栏'),
+          h('p', { className: 'ilp-summary' }, '点开对话末尾的顺带学习卡，再点「在右侧边聊边学」，就能在右侧对话边看，不打乱左边正在输入的草稿。'),
         ),
       )
     }
@@ -1661,7 +1850,7 @@ function makeCoachDrawerComponent(React, ctx, bridge, coachStore) {
     return h('aside', { className: 'ilp-drawer', 'data-testid': 'ilp-coach-drawer' },
       h('div', { className: 'ilp-drawer-box' },
         h('div', { className: 'ilp-card-head' },
-          h('span', { className: 'ilp-tag ok' }, '90s 小灶 · 不扰主对话'),
+          h('span', { className: 'ilp-badge-card' }, '边聊边学 · 不扰左边草稿'),
           h('button', {
             type: 'button',
             className: 'ilp-btn ghost xs',
@@ -1691,7 +1880,7 @@ function makeCoachDrawerComponent(React, ctx, bridge, coachStore) {
         drillResult ? h('div', { className: 'ilp-drawer-fb', 'data-testid': 'ilp-drawer-feedback' },
           h('div', { className: 'ilp-item-badges' },
             h('span', { className: 'ilp-tag ' + (drillResult.correct ? 'ok' : 'wait') },
-              drillResult.correct ? '判断命中' : '盲区点拨',
+              drillResult.correct ? '答对了' : '再看一眼关键点',
             ),
             makeMasteryMeter(h, drillResult.toTier || (drillResult.correct ? 3 : 2)),
           ),
@@ -1701,7 +1890,7 @@ function makeCoachDrawerComponent(React, ctx, bridge, coachStore) {
               type: 'button',
               className: 'ilp-btn line xs',
               onClick: function () { openDeepLearnSession(ctx, card).catch(function () {}) },
-            }, '转去 3 分钟专心闯关'),
+            }, '转去新会话深学'),
             h('button', {
               type: 'button',
               className: 'ilp-btn ghost xs',
@@ -1709,7 +1898,7 @@ function makeCoachDrawerComponent(React, ctx, bridge, coachStore) {
                 var layout = getHostService(ctx, 'layout')
                 if (layout && typeof layout.selectPanel === 'function') layout.selectPanel(PANEL_KEY)
               },
-            }, '回账本看进度'),
+            }, '回个人技能库'),
           ),
         ) : null,
       ),
@@ -1748,7 +1937,7 @@ function makeComposerPillComponent(React, ctx, bridge) {
           layout.selectPanel(PANEL_KEY)
         }
       },
-    }, '顺带私教 · ' + count + ' 待消化')
+    }, '顺带学习 · 已存 ' + count + ' 张')
   }
 }
 
@@ -1784,12 +1973,12 @@ exports.apply = function apply(ctx) {
       return srTabs.register({
         id: COACH_TAB_ID,
         kind: COACH_TAB_KIND,
-        title: function () { return '90s 小灶' },
+        title: function () { return '顺带学习栏' },
         guide: [{
           id: 'incidental-learn-coach-guide',
           order: 95,
-          title: function () { return '顺带私教 · 90s 小灶' },
-          description: function () { return '不打断主对话的单轮盲测点拨' },
+          title: function () { return '顺带学习栏' },
+          description: function () { return '在右侧对话边看，不打乱左边正在输入的草稿。' },
         }],
       })
     }
