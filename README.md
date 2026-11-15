@@ -48,5 +48,5 @@ npm run pack:release # 生成可重现 .tgz 与 .sha256
 建议在退出当前运行的桌面端后通过官方 `dsh plugin` 安装离线包：
 
 ```bash
-dsh plugin --profile desktop add ./oxmumu3-dsh-incidental-learn-0.1.0.tgz
+dsh plugin --profile desktop add ./oxmumu3-dsh-incidental-learn-0.1.1.tgz
 ```

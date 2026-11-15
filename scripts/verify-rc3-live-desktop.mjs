@@ -23,7 +23,8 @@ import os from 'node:os'
 import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
-const TARBALL = '/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v2-2026-11-14/dist/oxmumu3-dsh-incidental-learn-0.1.0.tgz'
+const PKG = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
+const TARBALL = `/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v2-2026-11-14/dist/oxmumu3-dsh-incidental-learn-${PKG.version}.tgz`
 const APP = '/Users/shan/dsh-finder-scratch/official-rc3-2026-11-13/apps/DeepSeek Harness.app'
 const OUT_DIR = '/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v2-2026-11-14/rc3-desktop-live'
 
@@ -268,7 +269,7 @@ const llmServer = http.createServer(async (req, res) => {
   })
   await new Promise(resolve => {
     shieldHoldRelease = resolve
-    setTimeout(resolve, 1300)
+    setTimeout(resolve, 5000)
   })
   sendSseEvent(res, 'content_block_delta', {
     index: 0,
@@ -513,10 +514,55 @@ try {
   ui = await attachApp(app, receipt.exceptions)
   receipt.boot1Plugin = await openLearnWorkbench(ui)
 
-  // 1. Empty Zero-Token Onboarding -> Load Multi-Agent Samples
+  // 1. Beginner Welcome Tutorial (0/0 Empty State) -> Screenshot & Layout Checks -> Load Samples
   await ui.waitFor('empty onboarding visible', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-empty-onboarding"]'))`), 15000)
+
+  const shots = []
+  const captureShot = async (name, width, height, theme, collapseSidebar) => {
+    await ui.command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: false })
+    await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })
+    await delay(200)
+    await toggleHostSidebar(ui, collapseSidebar)
+    await delay(300)
+    const metrics = await ui.evaluate(`({
+      scrollWidth: document.documentElement.scrollWidth,
+      innerWidth: window.innerWidth,
+      wbColorScheme: getComputedStyle(document.querySelector('[data-testid="ilp-workbench"]')).colorScheme,
+    })`)
+    assert.ok(metrics.scrollWidth <= metrics.innerWidth, `${name} overflow: ${metrics.scrollWidth} > ${metrics.innerWidth}`)
+    const shot = await ui.command('Page.captureScreenshot', { format: 'png', fromSurface: true })
+    fs.writeFileSync(path.join(OUT_DIR, name), Buffer.from(shot.data, 'base64'))
+    shots.push({ name, width, height, theme, ...metrics })
+  }
+
+  const emptyHeaderCheck = await ui.evaluate(`(() => {
+    const btns = [...document.querySelectorAll('[data-testid="ilp-workbench"] .ilp-header-acts button')].map(b => b.textContent?.trim())
+    const h1Rect = document.querySelector('[data-testid="ilp-workbench"] .ilp-h1')?.getBoundingClientRect()
+    const sumRect = document.querySelector('[data-testid="ilp-workbench"] .ilp-summary')?.getBoundingClientRect()
+    return {
+      headerBtnCount: btns.length,
+      hasStartChatCta: Boolean(document.querySelector('[data-testid="ilp-start-chat-cta"]')),
+      hasWelcomePreview: Boolean(document.querySelector('[data-testid="ilp-welcome-preview"]')),
+      stepCardsCount: document.querySelectorAll('.ilp-onb-step').length,
+      summaryGapFromH1: (h1Rect && sumRect) ? Math.round(sumRect.left - h1Rect.right) : null,
+    }
+  })()`)
+  assert.equal(emptyHeaderCheck.headerBtnCount, 0, '0/0 empty header must hide 15m course and export buttons')
+  assert.equal(emptyHeaderCheck.hasStartChatCta, true, 'welcome page must expose start-chat CTA')
+  assert.equal(emptyHeaderCheck.hasWelcomePreview, true, 'welcome page must expose live decision card preview')
+  assert.equal(emptyHeaderCheck.stepCardsCount, 3, 'welcome page must show 3 step cards')
+  assert.ok(emptyHeaderCheck.summaryGapFromH1 !== null && emptyHeaderCheck.summaryGapFromH1 <= 64, `summary must align left beside h1, got gap=${emptyHeaderCheck.summaryGapFromH1}`)
+
+  await captureShot('rc3-00-welcome-1440-dark.png', 1440, 900, 'dark', false)
+  await captureShot('rc3-00b-welcome-680-dark.png', 680, 900, 'dark', true)
+  await ui.command('Emulation.clearDeviceMetricsOverride')
+  await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
+  await delay(150)
+  await toggleHostSidebar(ui, false)
+  await delay(200)
+
   await ui.evaluate(`document.querySelector('[data-testid="ilp-load-samples-btn"]').click()`)
-  await ui.waitFor('sample spotlight + 3 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelectorAll('.ilp-track').length === 3)`), 15000)
+  await ui.waitFor('sample spotlight + preview banner + 3 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelector('[data-testid="ilp-preview-banner"]') && document.querySelectorAll('.ilp-track').length === 3)`), 15000)
 
   // Verify Triage Inbox starts collapsed (`aria-expanded="false"`), expand -> batch sweep -> Undo!
   const triageInitExpanded = await ui.evaluate(`document.querySelector('[data-testid="ilp-triage-toggle"]').getAttribute('aria-expanded')`)
@@ -585,24 +631,6 @@ try {
   await ui.waitFor('native dialog closed', () => ui.evaluate(`!document.querySelector('dialog.ilp-dialog')?.open`), 5000)
 
   // 3. Capture 4 Workbench @2x Screenshots (Light 1440, Dark 1440, Dark 680 split, Dark 390 narrow)
-  const shots = []
-  const captureShot = async (name, width, height, theme, collapseSidebar) => {
-    await ui.command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: false })
-    await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })
-    await delay(200)
-    await toggleHostSidebar(ui, collapseSidebar)
-    await delay(300)
-    const metrics = await ui.evaluate(`({
-      scrollWidth: document.documentElement.scrollWidth,
-      innerWidth: window.innerWidth,
-      wbColorScheme: getComputedStyle(document.querySelector('[data-testid="ilp-workbench"]')).colorScheme,
-    })`)
-    assert.ok(metrics.scrollWidth <= metrics.innerWidth, `${name} overflow: ${metrics.scrollWidth} > ${metrics.innerWidth}`)
-    const shot = await ui.command('Page.captureScreenshot', { format: 'png', fromSurface: true })
-    fs.writeFileSync(path.join(OUT_DIR, name), Buffer.from(shot.data, 'base64'))
-    shots.push({ name, width, height, theme, ...metrics })
-  }
-
   await captureShot('rc3-01-workbench-1440-light.png', 1440, 900, 'light', false)
   await captureShot('rc3-02-workbench-1440-dark.png', 1440, 900, 'dark', false)
   await captureShot('rc3-03-workbench-split-680-dark.png', 680, 900, 'dark', true)
@@ -650,6 +678,23 @@ try {
   if (shieldHoldRelease) shieldHoldRelease()
   await ui.waitFor('settled shield 4-line card', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-shield-card"]'))`), 15000)
 
+  // Verify zero-click auto-staging persists into LEDGER on disk WITHOUT clicking any card button or polluting undoStack
+  const undoCountBeforeAuto = JSON.parse(fs.readFileSync(LEDGER, 'utf8')).undoStack?.length || 0
+  const autoCapturedEntry = await ui.waitFor('zero-click auto-staged triage candidate on disk', () => {
+    const raw = JSON.parse(fs.readFileSync(LEDGER, 'utf8'))
+    const match = (raw.triage || []).find(c => /flex:1|min-height:0/.test(c.title || ''))
+    if (!match) return null
+    return {
+      id: match.id,
+      title: match.title,
+      cardKey: match.cardKey,
+      autoCapturedKeysCount: (raw.autoCapturedKeys || []).length,
+      undoStackLen: (raw.undoStack || []).length,
+    }
+  }, 8000)
+  assert.ok(autoCapturedEntry.autoCapturedKeysCount >= 1, 'autoCapturedKeys must record cardKey')
+  assert.equal(autoCapturedEntry.undoStackLen, undoCountBeforeAuto, 'auto-capture must not add undoStack entries')
+
   // Verify composer draft protection + non-destructive right-drawer trigger
   const composerPos = await ui.evaluate(`(() => {
     const ed = document.querySelector('[contenteditable="true"]');
@@ -682,15 +727,19 @@ try {
   const draftAfterDrawer = await ui.evaluate(`document.querySelector('[contenteditable="true"]')?.innerText?.trim()`)
   assert.ok(draftAfterDrawer.includes('正在写的业务代码说明'), `Right drawer must not disturb main composer draft; got: ${draftAfterDrawer}`)
 
-  // Click 挂入盲区账本 -> verify digest pill in conversation.input.right!
+  // Click 「直接收入路线」 -> promotes via save_explicit & updates digest pill in conversation.input.right!
   await ui.evaluate(`document.querySelector('[data-testid="ilp-shield-capture-btn"]').click()`)
-  await ui.waitFor('shield capture feedback', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-shield-feedback"]'))`), 8000)
+  const shieldFb = await ui.waitFor('shield direct save feedback', () => ui.evaluate(`document.querySelector('[data-testid="ilp-shield-feedback"]')?.textContent || null`), 8000)
+  assert.match(shieldFb, /已直接收入能力路线|已在能力路线中/)
   const pillText = await ui.waitFor('composer right pill present', () => ui.evaluate(`document.querySelector('[data-testid="ilp-composer-pill"]')?.textContent || null`), 8000)
   receipt.probeP1P2 = {
+    emptyWelcomeCheck: emptyHeaderCheck,
+    zeroClickAutoCaptured: autoCapturedEntry,
     sawShieldStreaming: Boolean(sawShieldStreaming),
     settledShieldRendered: true,
     rightDrawerMounted: true,
     mainDraftPreserved: draftAfterDrawer,
+    directSaveFeedback: shieldFb,
     composerPillText: pillText,
   }
 
@@ -882,7 +931,7 @@ export function apply(ctx) {
 
   fs.writeFileSync(path.join(OUT_DIR, 'cordis-inspect-receipt.json'), JSON.stringify({
     host: '0.2.2-rc.3',
-    plugin: '@oxmumu3/dsh-incidental-learn@0.1.0',
+    plugin: `${PKG.name}@${PKG.version}`,
     learnToolsPresent: ['learn_board', 'learn_save', 'learn_checkpoint', 'learn_triage'],
     clientQueriesOk: clientOk,
     clientQueriesTotal: clientTotal,

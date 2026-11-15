@@ -15,7 +15,8 @@
   "tracksHeading": "能力路线账本",
   "course15mBtn": "15 分钟闯关课",
   "exportNotesBtn": "导出学习笔记",
-  "loadSamplesBtn": "载入多 Agent 演示样本（零 Token）",
+  "loadSamplesBtn": "预览填满后的账本效果",
+  "startChatBtn": "去新会话派个活试试",
   "resetEmptyBtn": "清空恢复空台账",
   "undoAction": "撤销",
   "sources": {
@@ -43,7 +44,7 @@
     "shieldRejected": "被排除的差方案",
     "shieldProbe": "一句话摸底",
     "shieldBtnCoach": "右侧接招 90s",
-    "shieldBtnCapture": "挂入盲区账本",
+    "shieldBtnCapture": "直接收入路线",
     "shieldBtnDismiss": "已掌握，收起",
     "shieldCollapsed": "决策底牌已掌握收起 · 展开",
     "quizTag": "先探后讲",

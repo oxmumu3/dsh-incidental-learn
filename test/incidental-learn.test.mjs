@@ -336,3 +336,49 @@ test('locale zh/en key parity holds and entire repository contains zero emoji ch
   }
   scanDir(ROOT)
 })
+
+test('zero-click auto-staging deduplicates, avoids undo pollution, and cleans up on dismiss', async t => {
+  const home = makeTempHome(t)
+  const store = createLedgerStore({ dshHome: home }).ensureInitialized()
+
+  const payload = {
+    trackId: 'track-frontend',
+    title: 'Flex 列表容器滚动失效',
+    source: 'dsh-chat',
+    epistemic: 'inferred',
+    why: 'Flex 子项默认 min-height: auto 会被内容撑开，导致 overflow-y: auto 无法触发内部滚动',
+    rejected: '直接写死 height: 600px，分屏下会截断',
+    probe: '为什么写了 overflow-y: auto 还要补 min-height: 0？',
+  }
+
+  const first = await store.captureCandidate(payload, { auto: true, cardKey: 'card-flex-scroll-1' })
+  assert.equal(first.deduplicated, false)
+  assert.equal(first.autoCaptured, true)
+  assert.equal(first.snapshot.triage.length, 1)
+  assert.equal(first.snapshot.triage[0].cardKey, 'card-flex-scroll-1')
+  assert.equal(first.snapshot.canUndo, false, 'auto-capture must not pollute undoStack')
+  assert.ok(first.snapshot.autoCapturedKeys.includes('card-flex-scroll-1'))
+
+  // Re-mounting / re-rendering same cardKey must no-op without duplicating triage
+  const second = await store.captureCandidate(payload, { auto: true, cardKey: 'card-flex-scroll-1' })
+  assert.equal(second.deduplicated, true)
+  assert.equal(second.autoSkipped, true)
+  assert.equal(second.snapshot.triage.length, 1)
+
+  // Clicking "已掌握，收起" dismisses the card AND removes it from triage inbox
+  const dismissed = await store.dismissCard({ cardKey: 'card-flex-scroll-1', title: payload.title, restore: false })
+  assert.ok(dismissed.snapshot.dismissedCardKeys.includes('card-flex-scroll-1'))
+  assert.equal(dismissed.snapshot.triage.length, 0)
+
+  // Re-evaluating dismissed card must still skip auto-capture
+  const third = await store.captureCandidate(payload, { auto: true, cardKey: 'card-flex-scroll-1' })
+  assert.equal(third.autoSkipped, true)
+  assert.equal(third.snapshot.triage.length, 0)
+
+  // Auto-staged second card promoted via explicit save cleanly removes duplicate from triage
+  const payload2 = { ...payload, title: 'Dialog 原生顶层关闭机制' }
+  await store.captureCandidate(payload2, { auto: true, cardKey: 'card-dialog-2' })
+  const saved = await store.saveExplicitItem({ ...payload2, epistemic: 'explicit' })
+  assert.equal(saved.snapshot.items.some(it => it.title === payload2.title), true)
+  assert.equal(saved.snapshot.triage.some(c => c.title === payload2.title), false, 'saveExplicitItem must clear auto-staged candidate from triage')
+})

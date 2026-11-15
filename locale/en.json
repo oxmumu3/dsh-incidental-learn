@@ -15,7 +15,8 @@
   "tracksHeading": "Capability Tracks",
   "course15mBtn": "15-Min Micro-Course",
   "exportNotesBtn": "Export Study Notes",
-  "loadSamplesBtn": "Load Multi-Agent Samples (0 Tokens)",
+  "loadSamplesBtn": "Preview Sample Ledger (0 Tokens)",
+  "startChatBtn": "Try a Prompt in New Chat",
   "resetEmptyBtn": "Reset Empty Ledger",
   "undoAction": "Undo",
   "sources": {
@@ -43,7 +44,7 @@
     "shieldRejected": "Rejected alternatives",
     "shieldProbe": "Quick check",
     "shieldBtnCoach": "90s Side Drill",
-    "shieldBtnCapture": "Queue to Triage",
+    "shieldBtnCapture": "Save to Track",
     "shieldBtnDismiss": "Mastered, collapse",
     "shieldCollapsed": "Decision card collapsed · Expand",
     "quizTag": "Blind Test First",

@@ -8,9 +8,10 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 
+const PKG = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
 const DIST_DIR = '/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v2-2026-11-14/dist'
 const OUT_DIR = '/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v2-2026-11-14/rc3-desktop-live'
-const TARBALL = path.join(DIST_DIR, 'oxmumu3-dsh-incidental-learn-0.1.0.tgz')
+const TARBALL = path.join(DIST_DIR, `oxmumu3-dsh-incidental-learn-${PKG.version}.tgz`)
 
 const APPS = [
   {

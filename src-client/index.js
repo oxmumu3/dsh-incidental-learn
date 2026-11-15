@@ -52,6 +52,8 @@ function postLearnAction(action, payload) {
 }
 
 // Reactive client snapshot store shared by workbench, pill, fences, and right-sidebar drawer.
+var AUTO_CAPTURED_KEYS = new Set()
+
 function createClientLedgerBridge() {
   var snapshot = null
   var loading = false
@@ -346,6 +348,32 @@ function makeEvidenceDialog(React) {
   }
 }
 
+function openStarterChatSession(ctx) {
+  var layout = getHostService(ctx, 'layout')
+  if (layout && typeof layout.selectPanel === 'function') {
+    try { layout.selectPanel(null) } catch (_e) {}
+  }
+  var uiWorkspace = getHostService(ctx, 'uiWorkspace')
+  var sessions = getHostService(ctx, 'sessions')
+  var conv = getHostService(ctx, 'conversations')
+  var starterPrompt = '帮我检查一下当前项目的结构与改动方案，如果有值得注意的工程、架构或前端设计取舍，干完顺手给我一张 4 行决策底牌。'
+  return postLearnAction('ensure_practice_workspace', {}).catch(function () { return null }).then(function (res) {
+    var wsId = (res && res.workspace && res.workspace.workspaceId) || undefined
+    if (uiWorkspace && typeof uiWorkspace.openWorkspace === 'function' && wsId) {
+      uiWorkspace.openWorkspace(wsId, function (sessionId) {
+        var binding = (sessions && typeof sessions.binding === 'function' && sessionId) ? sessions.binding(sessionId) : null
+        if (binding && conv && conv.input && typeof conv.input.requestDraftInitialization === 'function') {
+          conv.input.requestDraftInitialization(binding, { prompt: starterPrompt, whenDraftExists: 'preserve' })
+        }
+      })
+      return
+    }
+    if (uiWorkspace && typeof uiWorkspace.startSession === 'function') {
+      uiWorkspace.startSession(wsId, { prompt: starterPrompt, whenDraftExists: 'preserve' })
+    }
+  })
+}
+
 // 2. Main Workbench (`main`, key: 'incidental-learn')
 function makeWorkbenchComponent(React, ctx, bridge) {
   var EvidenceDialog = makeEvidenceDialog(React)
@@ -384,6 +412,12 @@ function makeWorkbenchComponent(React, ctx, bridge) {
     var exportInfo = exportTextTuple[0]
     var setExportInfo = exportTextTuple[1]
 
+    var previewSamplesTuple = React.useState(false)
+    var isPreviewSamples = previewSamplesTuple[0]
+    var setIsPreviewSamples = previewSamplesTuple[1]
+
+    var autoOpenedTriageRef = React.useRef(false)
+
     React.useEffect(function () {
       ensureStyleInjected()
       var off = bridge.subscribe(function (next) { setBridgeState(next) })
@@ -396,6 +430,21 @@ function makeWorkbenchComponent(React, ctx, bridge) {
         clearInterval(timer)
       }
     }, [])
+
+    var currentSnap = bridgeState.snapshot
+    var currentStats = (currentSnap && currentSnap.stats) || { totalItems: 0 }
+    var currentTriageLen = (currentSnap && currentSnap.triage && currentSnap.triage.length) || 0
+
+    React.useEffect(function () {
+      if (currentStats.totalItems === 0 && currentTriageLen > 0) {
+        if (!autoOpenedTriageRef.current) {
+          autoOpenedTriageRef.current = true
+          setTriageOpen(true)
+        }
+      } else {
+        autoOpenedTriageRef.current = false
+      }
+    }, [currentStats.totalItems, currentTriageLen])
 
     function showToast(text, canUndo) {
       setToast({ text: text, canUndo: !!canUndo })
@@ -411,10 +460,22 @@ function makeWorkbenchComponent(React, ctx, bridge) {
 
     function handleLoadSamples() {
       bridge.runAction('load_sample_pack', {}).then(function () {
+        setIsPreviewSamples(true)
         showToast('已载入多 Agent 演示样本', true)
       }).catch(function (err) {
         showToast('加载失败：' + err.message, false)
       })
+    }
+
+    function handleResetEmpty() {
+      bridge.runAction('reset_empty', {}).then(function () {
+        setIsPreviewSamples(false)
+        setCourseOpen(false)
+        setExportInfo(null)
+        setTriageOpen(false)
+        autoOpenedTriageRef.current = false
+        showToast('已清空恢复空台账', true)
+      }).catch(function () {})
     }
 
     function handleStartDeepDrill(item) {
@@ -510,24 +571,20 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           h('div', { className: 'ilp-toprow' },
             h('span', { className: 'ilp-eyebrow' }, 'SHIELD · 跨 AGENT 技能内化台账'),
             h('div', { className: 'ilp-header-acts' },
-              h('button', {
+              stats.totalItems > 0 ? h('button', {
                 type: 'button',
                 className: 'ilp-btn line sm',
                 onClick: handleBuildCourse,
-              }, courseOpen ? '收起 15 分钟闯关课' : '15 分钟闯关课'),
-              h('button', {
+              }, courseOpen ? '收起 15 分钟闯关课' : '15 分钟闯关课') : null,
+              stats.totalItems > 0 ? h('button', {
                 type: 'button',
                 className: 'ilp-btn line sm',
                 onClick: handleExportNotes,
-              }, '导出学习笔记'),
+              }, '导出学习笔记') : null,
               !isCompletelyEmpty ? h('button', {
                 type: 'button',
                 className: 'ilp-btn ghost sm',
-                onClick: function () {
-                  bridge.runAction('reset_empty', {}).then(function () {
-                    showToast('已清空恢复空台账', true)
-                  }).catch(function () {})
-                },
+                onClick: handleResetEmpty,
               }, '清空') : null,
             ),
           ),
@@ -539,21 +596,117 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           ),
         ),
 
-        // Zero-Token Empty Onboarding
-        isCompletelyEmpty ? h('section', { className: 'ilp-empty-card', 'data-testid': 'ilp-empty-onboarding' },
-          h('span', { className: 'ilp-tag run' }, '零 Token 启动引导'),
-          h('h2', { style: { fontSize: '16px', fontWeight: 600 } }, '平常派活零打断，只在关键取舍顺带长本事'),
-          h('p', { className: 'ilp-spot-desc' },
-            '1. 在任意 DSH 会话照常干活：仅当出现实质工程/架构/前端取舍时，末尾亮出 4 行决策底牌。  ' +
-            '2. 点「右侧接招 90s」就地盲测而不污染主对话。  ' +
-            '3. Antigravity / Codex 可通过命令行把真实踩坑追加到同一份账本。',
-          ),
+        isPreviewSamples && stats.totalItems > 0 ? h('div', { className: 'ilp-preview-banner', 'data-testid': 'ilp-preview-banner' },
+          h('span', null, '当前展示的是示例账本（不耗 Token）。体验完随时恢复 0/0 空台账，再在平时对话里慢慢攒自己的盲区。'),
           h('button', {
             type: 'button',
-            className: 'ilp-btn solid',
-            'data-testid': 'ilp-load-samples-btn',
-            onClick: handleLoadSamples,
-          }, '载入多 Agent 演示样本（零 Token）'),
+            className: 'ilp-btn line xs',
+            'data-testid': 'ilp-clear-preview-btn',
+            onClick: handleResetEmpty,
+          }, '清空示例，恢复空台账'),
+        ) : null,
+
+        // Beginner Welcome Tutorial (0/0 Empty State)
+        isCompletelyEmpty ? h('div', { className: 'ilp-onb-stack', 'data-testid': 'ilp-empty-onboarding' },
+          h('section', { className: 'ilp-empty-card' },
+            h('span', { className: 'ilp-tag run' }, '新手 1 分钟指南 · 无需提前建档'),
+            h('h2', { className: 'ilp-onb-lead' }, '平时照常让 AI 干活，顺手在对话末尾攒下关键取舍'),
+            h('p', { className: 'ilp-onb-copy' },
+              '你不需要专门打开这里手动建笔记。插件真正发挥作用是在你日常的对话流：平时派活零打断，只有遇到值得留心的工程、架构或前端设计取舍时，回复末尾才会自动亮出 4 行决策底牌；等你攒下几条，有空再来这里 3 分钟闯关过一遍。',
+            ),
+            h('div', { className: 'ilp-onb-cta' },
+              h('button', {
+                type: 'button',
+                className: 'ilp-btn solid',
+                'data-testid': 'ilp-start-chat-cta',
+                onClick: function () {
+                  openStarterChatSession(ctx).catch(function (err) {
+                    showToast('打开会话失败：' + err.message, false)
+                  })
+                },
+              }, '去新会话派个活试试'),
+              h('button', {
+                type: 'button',
+                className: 'ilp-btn line',
+                'data-testid': 'ilp-load-samples-btn',
+                onClick: handleLoadSamples,
+              }, '预览填满后的账本效果'),
+            ),
+          ),
+          h('div', { className: 'ilp-onb-steps' },
+            h('article', { className: 'ilp-onb-step' },
+              h('span', { className: 'ilp-onb-num' }, '01 · 对话中自动触发'),
+              h('h3', { className: 'ilp-onb-step-h' }, '只挑值得记的取舍亮牌'),
+              h('p', { className: 'ilp-onb-step-p' }, '你在任意 DSH 会话正常派活，普通改字、查资料、跑脚本完全零打扰；只有做出实质方案取舍时，末尾才附 4 行底牌。'),
+            ),
+            h('article', { className: 'ilp-onb-step' },
+              h('span', { className: 'ilp-onb-num' }, '02 · 不按也不会丢'),
+              h('h3', { className: 'ilp-onb-step-h' }, '3 个按钮随手处理或跳过'),
+              h('p', { className: 'ilp-onb-step-p' }, '当场可点「右侧接招 90s」小测一题，或「直接收入路线」重点跟踪；哪怕三个按钮一个都不点，也会自动存进「待分诊候选」。'),
+            ),
+            h('article', { className: 'ilp-onb-step' },
+              h('span', { className: 'ilp-onb-num' }, '03 · 回台账集中复盘'),
+              h('h3', { className: 'ilp-onb-step-h' }, '把别人的方案变成自己的本事'),
+              h('p', { className: 'ilp-onb-step-p' }, 'Antigravity / Codex 踩过的坑也会汇总到这里。闲下来挑一条薄弱项点「开始 3 分钟闯关」，用自己的话答对一次就升格为 4/4。'),
+            ),
+          ),
+          h('section', { className: 'ilp-onb-demo', 'data-testid': 'ilp-welcome-preview' },
+            h('div', { className: 'ilp-onb-demo-head' },
+              h('h3', { className: 'ilp-onb-step-h' }, '对话里实际长这样（效果示意，不耗 Token）'),
+              h('span', { className: 'ilp-onb-demo-sub' }, '正常回复结束时自动附在末尾'),
+            ),
+            h('article', { className: 'ilp-card' },
+              h('div', { className: 'ilp-card-head' },
+                h('span', { className: 'ilp-card-title' }, '列表容器滚动卡死：flex:1 与 min-height:0 的配合'),
+                h('div', { className: 'ilp-item-badges' },
+                  h('span', { className: 'ilp-tag outline' }, '决策底牌'),
+                  h('span', { className: 'ilp-tag outline' }, 'DSH 会话'),
+                  h('span', { className: 'ilp-tag outline' }, '推断候选'),
+                ),
+              ),
+              h('div', { className: 'ilp-shield-grid' },
+                h('div', { className: 'ilp-shield-row' },
+                  h('span', { className: 'ilp-shield-k' }, '为什么这么做'),
+                  h('span', { className: 'ilp-shield-v' }, 'Flex 子项默认 min-height: auto 会被内容撑高，加 min-height: 0 才允许收缩并触发内部滚动。'),
+                ),
+                h('div', { className: 'ilp-shield-row' },
+                  h('span', { className: 'ilp-shield-k' }, '被排除的差方案'),
+                  h('span', { className: 'ilp-shield-v' }, '写死 height: 600px 虽能临时出现滚动条，但切到小屏或分屏时会裁切或双滚动条。'),
+                ),
+                h('div', { className: 'ilp-shield-probe' },
+                  h('span', { className: 'ilp-shield-k', style: { marginRight: '6px' } }, '一句话摸底'),
+                  '已经写了 overflow-y: auto，为什么外层 flex 容器里非要再补 min-height: 0？',
+                ),
+              ),
+              h('div', { className: 'ilp-card-acts', 'aria-hidden': 'true' },
+                h('span', { className: 'ilp-btn solid sm', style: { cursor: 'default' } }, '右侧接招 90s'),
+                h('span', { className: 'ilp-btn line sm', style: { cursor: 'default' } }, '直接收入路线'),
+                h('span', { className: 'ilp-btn ghost sm', style: { cursor: 'default' } }, '已掌握，收起'),
+              ),
+            ),
+            h('div', { className: 'ilp-legend-grid' },
+              h('div', { className: 'ilp-legend-item' },
+                h('span', { className: 'ilp-legend-k' }, '点「右侧接招 90s」'),
+                h('p', { className: 'ilp-legend-v' }, '在右侧开一个小灶面板当场测一题，不打断当前对话和底部没发完的草稿。'),
+              ),
+              h('div', { className: 'ilp-legend-item' },
+                h('span', { className: 'ilp-legend-k' }, '点「直接收入路线」'),
+                h('p', { className: 'ilp-legend-v' }, '觉得这条值钱、之后要重点补齐，直接记进能力路线，不再堆在待分诊里。'),
+              ),
+              h('div', { className: 'ilp-legend-item' },
+                h('span', { className: 'ilp-legend-k' }, '点「已掌握，收起」'),
+                h('p', { className: 'ilp-legend-v' }, '卡片当场折叠收起，同时自动从待分诊候选移除，不再反复出现。'),
+              ),
+              h('div', { className: 'ilp-legend-item' },
+                h('span', { className: 'ilp-legend-k' }, '三个按钮都不按'),
+                h('p', { className: 'ilp-legend-v' }, '也不会丢：卡片会自动去重并静静存进本页「待分诊候选」，回头随时挑着留或略过。'),
+              ),
+            ),
+          ),
+        ) : null,
+
+        stats.totalItems === 0 && triage.length > 0 ? h('div', { className: 'ilp-onb-triage-tip', 'data-testid': 'ilp-empty-triage-tip' },
+          '能力路线目前 0 条，但下面已自动帮你接住对话里出现的候选取舍：点「收入路线」就正式开始追踪，点「略过」则直接清掉。',
         ) : null,
 
         // Single Spotlight Hero Card
@@ -718,7 +871,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
               isOpen ? h('div', { className: 'ilp-track-list' },
                 track.items.length === 0
                   ? h('div', { className: 'ilp-item-row' },
-                      h('span', { className: 'ilp-summary' }, '该路线暂无条目，可在会话底牌点「挂入盲区账本」或用 CLI 录入。'),
+                      h('span', { className: 'ilp-summary' }, '该路线暂无条目，可在会话底牌点「直接收入路线」或从待分诊候选收入。'),
                     )
                   : track.items.map(function (item) {
                       return h('div', { key: item.id, className: 'ilp-item-row', 'data-testid': 'ilp-item-' + item.id },
@@ -794,13 +947,38 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
     var feedback = feedbackTuple[0]
     var setFeedback = feedbackTuple[1]
 
+    var isStreaming = Boolean(props && props.streaming)
+    var parsed = isStreaming ? null : parseShieldFence(props && props.code)
+    var cardKey = parsed ? hashCardKey(parsed, (props && props.sessionId) || '') : ''
+    var snap = bridgeState.snapshot || null
+    var dismissedList = (snap && snap.dismissedCardKeys) || []
+    var autoCapturedList = (snap && snap.autoCapturedKeys) || []
+    var isDismissed = !!(parsed && !expandedOverride && dismissedList.indexOf(cardKey) >= 0)
+
     React.useEffect(function () {
       ensureStyleInjected()
       var off = bridge.subscribe(function (next) { setBridgeState(next) })
       return off
     }, [])
 
-    if (props && props.streaming) {
+    React.useEffect(function () {
+      if (isStreaming || !parsed || !parsed.title || !cardKey || isDismissed) return
+      if (AUTO_CAPTURED_KEYS.has(cardKey)) return
+      if (autoCapturedList.indexOf(cardKey) >= 0) {
+        AUTO_CAPTURED_KEYS.add(cardKey)
+        return
+      }
+      AUTO_CAPTURED_KEYS.add(cardKey)
+      bridge.runAction('capture_candidate', {
+        auto: true,
+        cardKey: cardKey,
+        payload: parsed,
+      }).catch(function () {
+        AUTO_CAPTURED_KEYS.delete(cardKey)
+      })
+    }, [isStreaming, cardKey, isDismissed])
+
+    if (isStreaming) {
       return h('div', { className: 'ilp-fence' },
         h('div', { className: 'ilp-card streaming', 'data-testid': 'ilp-shield-streaming' },
           h('span', { className: 'ilp-summary' }, '顺带私教 · 正在整理本轮决策底牌…'),
@@ -809,14 +987,9 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
       )
     }
 
-    var parsed = parseShieldFence(props && props.code)
     if (!parsed) {
       return (props && props.children) || null
     }
-
-    var cardKey = hashCardKey(parsed, (props && props.sessionId) || '')
-    var dismissedList = (bridgeState.snapshot && bridgeState.snapshot.dismissedCardKeys) || []
-    var isDismissed = !expandedOverride && dismissedList.indexOf(cardKey) >= 0
 
     if (isDismissed) {
       return h('div', { className: 'ilp-fence' },
@@ -827,7 +1000,7 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
             className: 'ilp-btn ghost xs',
             onClick: function () {
               setExpandedOverride(true)
-              bridge.runAction('dismiss_card', { cardKey: cardKey, restore: true }).catch(function () {})
+              bridge.runAction('dismiss_card', { cardKey: cardKey, title: parsed.title, restore: true }).catch(function () {})
             },
           }, '展开'),
         ),
@@ -849,21 +1022,25 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
       }
     }
 
-    function handleCaptureCandidate() {
-      bridge.runAction('capture_candidate', { payload: parsed }).then(function (res) {
-        if (res && res.alreadyInTrack) {
+    function handleSaveDirect() {
+      AUTO_CAPTURED_KEYS.add(cardKey)
+      bridge.runAction('save_explicit', {
+        payload: Object.assign({}, parsed, { epistemic: 'explicit' }),
+      }).then(function (res) {
+        if (res && res.created === false) {
           setFeedback('该条已在能力路线中')
         } else {
-          setFeedback('已挂入「待分诊候选」')
+          setFeedback('已直接收入能力路线')
         }
       }).catch(function (err) {
-        setFeedback('挂入失败：' + err.message)
+        setFeedback('收入失败：' + err.message)
       })
     }
 
     function handleDismiss() {
       setExpandedOverride(false)
-      bridge.runAction('dismiss_card', { cardKey: cardKey, restore: false }).catch(function () {})
+      AUTO_CAPTURED_KEYS.add(cardKey)
+      bridge.runAction('dismiss_card', { cardKey: cardKey, title: parsed.title, restore: false }).catch(function () {})
     }
 
     return h('div', { className: 'ilp-fence' },
@@ -901,8 +1078,8 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
             type: 'button',
             className: 'ilp-btn line sm',
             'data-testid': 'ilp-shield-capture-btn',
-            onClick: handleCaptureCandidate,
-          }, '挂入盲区账本'),
+            onClick: handleSaveDirect,
+          }, '直接收入路线'),
           h('button', {
             type: 'button',
             className: 'ilp-btn ghost sm',
