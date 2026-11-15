@@ -472,13 +472,21 @@ async function openLearnWorkbench(ui) {
 
 async function toggleHostSidebar(ui, wantCollapsed) {
   return await ui.evaluate(`(() => {
-    const collapseBtn = [...document.querySelectorAll('button,[role=button]')].find(el => /收起侧边栏|展开侧边栏|toggle sidebar|collapse sidebar|expand sidebar/i.test((el.getAttribute('aria-label') || '') + ' ' + (el.title || '')))
-      || [[258,25],[256,25],[254,25],[28,25]].map(([x,y]) => document.elementFromPoint(x,y)?.closest('button,[role=button]')).find(Boolean)
     const wbRect = document.querySelector('[data-testid="ilp-workbench"]')?.getBoundingClientRect()
     const isCollapsed = wbRect ? wbRect.left < 70 : false
-    if (collapseBtn && isCollapsed !== ${wantCollapsed ? 'true' : 'false'}) {
+    if (isCollapsed === ${wantCollapsed ? 'true' : 'false'}) {
+      return { toggled: false, isCollapsed }
+    }
+    const byLabel = [...document.querySelectorAll('button,[role=button]')].find(el => /收起侧边栏|展开侧边栏|toggle sidebar|collapse sidebar|expand sidebar/i.test((el.getAttribute('aria-label') || '') + ' ' + (el.title || '')))
+    const topLeftButtons = [...document.querySelectorAll('button,[role=button]')].filter(el => {
+      const r = el.getBoundingClientRect()
+      return r.width >= 16 && r.width <= 48 && r.height >= 16 && r.height <= 48 && r.top >= 4 && r.top <= 48 && r.left >= 60 && r.left <= 280
+    }).sort((a, b) => a.getBoundingClientRect().left - b.getBoundingClientRect().left)
+    const collapseBtn = byLabel
+      || (isCollapsed ? topLeftButtons[0] : (topLeftButtons.find(el => el.getBoundingClientRect().left >= 200) || topLeftButtons[topLeftButtons.length - 1]))
+    if (collapseBtn) {
       collapseBtn.click()
-      return { toggled: true }
+      return { toggled: true, isCollapsed }
     }
     return { toggled: false, isCollapsed }
   })()`)
@@ -519,11 +527,19 @@ try {
 
   const shots = []
   const captureShot = async (name, width, height, theme, collapseSidebar) => {
+    if (collapseSidebar && width < 900) {
+      await ui.command('Emulation.setDeviceMetricsOverride', { width: 1440, height, deviceScaleFactor: 2, mobile: false })
+      await delay(100)
+      await toggleHostSidebar(ui, true)
+      await delay(200)
+    }
     await ui.command('Emulation.setDeviceMetricsOverride', { width, height, deviceScaleFactor: 2, mobile: false })
     await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: theme }] })
     await delay(200)
-    await toggleHostSidebar(ui, collapseSidebar)
-    await delay(300)
+    if (!collapseSidebar || width >= 900) {
+      await toggleHostSidebar(ui, collapseSidebar)
+      await delay(250)
+    }
     const metrics = await ui.evaluate(`({
       scrollWidth: document.documentElement.scrollWidth,
       innerWidth: window.innerWidth,
@@ -539,30 +555,89 @@ try {
     const btns = [...document.querySelectorAll('[data-testid="ilp-workbench"] .ilp-header-acts button')].map(b => b.textContent?.trim())
     const h1Rect = document.querySelector('[data-testid="ilp-workbench"] .ilp-h1')?.getBoundingClientRect()
     const sumRect = document.querySelector('[data-testid="ilp-workbench"] .ilp-summary')?.getBoundingClientRect()
+    const idleTab = document.querySelector('[data-testid="ilp-sim-tab-idle"]')
     return {
       headerBtnCount: btns.length,
       hasStartChatCta: Boolean(document.querySelector('[data-testid="ilp-start-chat-cta"]')),
       hasWelcomePreview: Boolean(document.querySelector('[data-testid="ilp-welcome-preview"]')),
+      hasVisualGuide: Boolean(document.querySelector('[data-testid="ilp-visual-guide"]')),
+      hasToggleGuideBtnOnEmpty: Boolean(document.querySelector('[data-testid="ilp-toggle-guide-btn"]')),
       stepCardsCount: document.querySelectorAll('.ilp-onb-step').length,
+      sceneCount: document.querySelectorAll('.ilp-scene').length,
+      flowPillsCount: document.querySelectorAll('.ilp-vis-pill').length,
+      idleTabSelected: idleTab?.getAttribute('aria-selected'),
+      outcomeMode: document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode'),
       summaryGapFromH1: (h1Rect && sumRect) ? Math.round(sumRect.left - h1Rect.right) : null,
     }
   })()`)
   assert.equal(emptyHeaderCheck.headerBtnCount, 0, '0/0 empty header must hide 15m course and export buttons')
   assert.equal(emptyHeaderCheck.hasStartChatCta, true, 'welcome page must expose start-chat CTA')
   assert.equal(emptyHeaderCheck.hasWelcomePreview, true, 'welcome page must expose live decision card preview')
+  assert.equal(emptyHeaderCheck.hasVisualGuide, true, 'welcome page must render visual guide')
+  assert.equal(emptyHeaderCheck.hasToggleGuideBtnOnEmpty, false, '0/0 empty header must not show redundant toggle guide button')
   assert.equal(emptyHeaderCheck.stepCardsCount, 3, 'welcome page must show 3 step cards')
+  assert.equal(emptyHeaderCheck.sceneCount, 3, 'welcome page must render 3 UI-miniature scene previews')
+  assert.equal(emptyHeaderCheck.flowPillsCount, 4, 'welcome page hero must show 4 visual flow pills')
+  assert.equal(emptyHeaderCheck.idleTabSelected, 'true', 'default simulator tab must be idle (no button clicked)')
+  assert.equal(emptyHeaderCheck.outcomeMode, 'idle', 'default simulator outcome must show idle')
   assert.ok(emptyHeaderCheck.summaryGapFromH1 !== null && emptyHeaderCheck.summaryGapFromH1 <= 64, `summary must align left beside h1, got gap=${emptyHeaderCheck.summaryGapFromH1}`)
 
-  await captureShot('rc3-00-welcome-1440-dark.png', 1440, 900, 'dark', false)
-  await captureShot('rc3-00b-welcome-680-dark.png', 680, 900, 'dark', true)
-  await ui.command('Emulation.clearDeviceMetricsOverride')
-  await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
-  await delay(150)
-  await toggleHostSidebar(ui, false)
-  await delay(200)
+  // Interactive Scene Simulator assertions (before any Emulation device override so mouseWheel later uses untouched compositor)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-tab-coach"]').click()`)
+  const simCoachState = await ui.waitFor('simulator coach tab active', () => ui.evaluate(`(() => {
+    const tab = document.querySelector('[data-testid="ilp-sim-tab-coach"]')
+    const out = document.querySelector('[data-testid="ilp-sim-outcome"]')
+    if (!tab || tab.getAttribute('aria-selected') !== 'true' || !out) return null
+    return {
+      selected: tab.getAttribute('aria-selected'),
+      mode: out.getAttribute('data-mode'),
+      text: out.textContent || '',
+    }
+  })()`), 6000)
+  assert.equal(simCoachState.selected, 'true')
+  assert.equal(simCoachState.mode, 'coach')
+  assert.ok(simCoachState.text.includes('90s 小灶抽屉'), 'coach outcome must explain 90s sidebar drawer')
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-btn-save"]').click()`)
+  await ui.waitFor('sim save mode active', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'save'`), 4000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-btn-dismiss"]').click()`)
+  await ui.waitFor('sim dismiss mode active', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'dismiss'`), 4000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-tab-idle"]').click()`)
+  await ui.waitFor('sim idle restored', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'idle'`), 4000)
 
   await ui.evaluate(`document.querySelector('[data-testid="ilp-load-samples-btn"]').click()`)
   await ui.waitFor('sample spotlight + preview banner + 3 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelector('[data-testid="ilp-preview-banner"]') && document.querySelectorAll('.ilp-track').length === 3)`), 15000)
+
+  // Verify non-empty header exposes non-destructive Mechanism Guide toggle (`机制图解`) without wiping accumulated ledger
+  const guideCollapsedCheck = await ui.evaluate(`(() => {
+    const btn = document.querySelector('[data-testid="ilp-toggle-guide-btn"]')
+    return {
+      exists: Boolean(btn),
+      expanded: btn?.getAttribute('aria-expanded'),
+      text: btn?.textContent?.trim(),
+      guideVisible: Boolean(document.querySelector('[data-testid="ilp-visual-guide"]')),
+    }
+  })()`)
+  assert.equal(guideCollapsedCheck.exists, true, 'non-empty header must show 机制图解 toggle')
+  assert.equal(guideCollapsedCheck.expanded, 'false', '机制图解 toggle must start collapsed')
+  assert.equal(guideCollapsedCheck.guideVisible, false)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-toggle-guide-btn"]').click()`)
+  const guideOpenedCheck = await ui.waitFor('机制图解 opened alongside spotlight', () => ui.evaluate(`(() => {
+    const g = document.querySelector('[data-testid="ilp-visual-guide"]')
+    const s = document.querySelector('[data-testid="ilp-spotlight"]')
+    const btn = document.querySelector('[data-testid="ilp-toggle-guide-btn"]')
+    if (!g || !s || !btn || btn.getAttribute('aria-expanded') !== 'true') return null
+    return {
+      expanded: btn.getAttribute('aria-expanded'),
+      guideVisible: g.offsetHeight > 0,
+      spotlightVisible: s.offsetHeight > 0,
+      hasCloseBtn: Boolean(document.querySelector('[data-testid="ilp-close-guide-btn"]')),
+    }
+  })()`), 6000)
+  assert.equal(guideOpenedCheck.guideVisible, true)
+  assert.equal(guideOpenedCheck.spotlightVisible, true, 'opening 机制图解 must preserve accumulated spotlight below')
+  assert.equal(guideOpenedCheck.hasCloseBtn, true)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-toggle-guide-btn"]').click()`)
+  await ui.waitFor('机制图解 collapsed cleanly', () => ui.evaluate(`!document.querySelector('[data-testid="ilp-visual-guide"]') && document.querySelector('[data-testid="ilp-toggle-guide-btn"]')?.getAttribute('aria-expanded') === 'false'`), 6000)
 
   // Verify Triage Inbox starts collapsed (`aria-expanded="false"`), expand -> batch sweep -> Undo!
   const triageInitExpanded = await ui.evaluate(`document.querySelector('[data-testid="ilp-triage-toggle"]').getAttribute('aria-expanded')`)
@@ -574,16 +649,18 @@ try {
   await ui.evaluate(`document.querySelector('[data-testid="ilp-toast-undo"]').click()`)
   await ui.waitFor('6 triage candidates restored', () => ui.evaluate(`document.querySelectorAll('.ilp-triage-row').length === 6`), 8000)
 
-  // Real mouseWheel vertical scroll check (`DSH/AGENTS.md` Rule 3): expand 15-min course with triage open so content exceeds viewport height
+  // Real mouseWheel vertical scroll check BEFORE Emulation device metrics override: expand 15-min course so content overflows cleanly
   await ui.evaluate(`(() => {
     const btn = [...document.querySelectorAll('[data-testid="ilp-workbench"] button')].find(b => b.textContent?.trim() === '15 分钟闯关课')
     if (btn) btn.click()
   })()`)
-  await ui.waitFor('workbench scrollable overflow', () => ui.evaluate(`(() => {
+  const wheelBox = await ui.waitFor('workbench scrollable overflow', () => ui.evaluate(`(() => {
     const wb = document.querySelector('.ilp-wb')
-    return wb && wb.scrollHeight > wb.clientHeight ? { clientHeight: wb.clientHeight, scrollHeight: wb.scrollHeight } : null
+    if (!wb || wb.scrollHeight <= wb.clientHeight) return null
+    const r = wb.getBoundingClientRect()
+    return { x: Math.round(r.left + r.width / 2), y: Math.round(r.top + r.height / 2), clientHeight: wb.clientHeight, scrollHeight: wb.scrollHeight }
   })()`), 8000)
-  await ui.command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: 560, y: 450, deltaX: 0, deltaY: 360 })
+  await ui.command('Input.dispatchMouseEvent', { type: 'mouseWheel', x: wheelBox.x, y: wheelBox.y, deltaX: 0, deltaY: 360 })
   const wheelScroll = await ui.waitFor('wheel scrollTop > 0', () => ui.evaluate(`(() => {
     const wb = document.querySelector('.ilp-wb')
     return wb && wb.scrollTop > 0 ? { clientHeight: wb.clientHeight, scrollHeight: wb.scrollHeight, wheelScrollTop: wb.scrollTop } : null
@@ -636,12 +713,36 @@ try {
   await captureShot('rc3-03-workbench-split-680-dark.png', 680, 900, 'dark', true)
   await captureShot('rc3-04-workbench-narrow-390-dark.png', 390, 844, 'dark', true)
 
-  // Restore 1440x900 light + expanded sidebar for Probes P1, P2, P3
+  // Restore empty state temporarily to capture 0/0 Visual Onboarding @2x Screenshots, then re-load samples for Probes P1..P3
+  await ui.command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
+  await delay(100)
+  await toggleHostSidebar(ui, false)
+  await delay(150)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-clear-preview-btn"]').click()`)
+  await ui.waitFor('empty onboarding restored', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-empty-onboarding"]'))`), 10000)
+  await ui.evaluate(`(() => {
+    const closeBtn = [...document.querySelectorAll('.ilp-toast button')].find(b => b.textContent?.trim() === '关闭')
+    if (closeBtn) closeBtn.click()
+  })()`)
+  await delay(100)
+
+  await captureShot('rc3-00-welcome-1440-light.png', 1440, 900, 'light', false)
+  await captureShot('rc3-00-welcome-1440-dark.png', 1440, 900, 'dark', false)
+  await captureShot('rc3-00b-welcome-680-dark.png', 680, 900, 'dark', true)
+
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-tab-coach"]').click()`)
+  await ui.waitFor('sim coach active for screenshot', () => ui.evaluate(`document.querySelector('[data-testid="ilp-sim-outcome"]')?.getAttribute('data-mode') === 'coach'`), 5000)
+  await captureShot('rc3-00c-welcome-sim-coach-1440-dark.png', 1440, 900, 'dark', false)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-tab-idle"]').click()`)
+
+  // Restore 1440x900 light + expanded sidebar + sample ledger for Probes P1, P2, P3
   await ui.command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
   await ui.command('Emulation.setEmulatedMedia', { features: [{ name: 'prefers-color-scheme', value: 'light' }] })
   await delay(200)
   await toggleHostSidebar(ui, false)
-  await delay(250)
+  await delay(200)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-load-samples-btn"]').click()`)
+  await ui.waitFor('sample ledger restored for probes', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]'))`), 10000)
 
   // 4. Probe P1 + P2: Ensure practice workspace -> open clean session -> send normal work prompt -> observe streaming -> settled shield -> open right sidebar drawer!
   const wsPrep = await ui.evaluate(`fetch('/api/incidental_learn/action', {
