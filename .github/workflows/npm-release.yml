@@ -54,7 +54,7 @@ jobs:
           set -eu
           node scripts/build-package.mjs --out dist
           cd dist
-          sha256sum ./*.tgz > SHA256SUMS
+          sha256sum oxmumu3-*.tgz > SHA256SUMS
           cat SHA256SUMS
           echo "sha256=$(awk '{print $1}' SHA256SUMS)" >> "$GITHUB_OUTPUT"
       - id: upload

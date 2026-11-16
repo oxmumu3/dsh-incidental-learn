@@ -101,7 +101,7 @@ test('atomic ledger, external mtimeMs reload, triage batch >5 & undoStack work a
   assert.equal(initSnap.triage.length, 0)
 
   const sampleSnap = await storeA.loadSamplePack()
-  assert.equal(sampleSnap.tracks.length, 3)
+  assert.equal(sampleSnap.tracks.length, 4)
   assert.equal(sampleSnap.triageOverCap, true, 'starter sample pack carries 6 triage candidates to surface batch sweep')
 
   // External process (storeB) writes an item without notifying storeA in memory
@@ -109,7 +109,7 @@ test('atomic ledger, external mtimeMs reload, triage batch >5 & undoStack work a
     title: '外部 CLI 追加盲区',
     why: '并发修改前比对 mtimeMs 避免覆盖',
     source: 'antigravity',
-    trackId: 'track-harness',
+    trackId: 'track-ai',
   })
 
   // Ensure mtime granularity notice if same millisecond
@@ -176,6 +176,38 @@ test('external CLI bridge add / status / export reads & mutates isolated $DSH_HO
   const expRes = spawnSync('node', [cli, 'export', '--dsh-home', home, '--out', outNote], { encoding: 'utf8' })
   assert.equal(expRes.status, 0, expRes.stderr)
   assert.ok(fs.existsSync(outNote))
+})
+
+test('legacy v0.1.x ledger tracks migrate seamlessly to universal 4 categories without dropping items', t => {
+  const home = makeTempHome(t)
+  const dir = path.join(home, 'incidental-learn')
+  fs.mkdirSync(dir, { recursive: true })
+  fs.writeFileSync(path.join(dir, 'ledger.json'), JSON.stringify({
+    schemaVersion: 1,
+    version: 9,
+    updatedAt: Date.now(),
+    tracks: [
+      { id: 'track-frontend', title: '前端与交互品味', order: 1 },
+      { id: 'track-harness', title: 'Agent 架构与 DSH Harness 六格主线', order: 2 },
+      { id: 'track-growth', title: '增长分发与内容渠道适配', order: 3 },
+    ],
+    items: [
+      { id: 'old-h1', trackId: 'track-harness', title: '旧版 AI 取舍卡', why: '保留旧数据', masteryTier: 3 },
+      { id: 'old-g1', trackId: 'track-growth', title: '旧版增长取舍卡', why: '保留增长数据', masteryTier: 2 },
+    ],
+    triage: [
+      { id: 'old-t1', trackId: 'track-harness', title: '旧版待分诊 AI 卡', why: '保留待分诊' },
+    ],
+  }, null, 2))
+
+  const store = createLedgerStore({ dshHome: home }).ensureInitialized()
+  const { snapshot } = store.getSnapshot()
+  assert.deepEqual(snapshot.tracks.map(tr => tr.id), ['track-frontend', 'track-engineering', 'track-ai', 'track-product'])
+  assert.equal(snapshot.stats.totalItems, 2)
+  assert.equal(snapshot.triage.length, 1)
+  assert.equal(snapshot.tracks.find(tr => tr.id === 'track-ai').items[0].title, '旧版 AI 取舍卡')
+  assert.equal(snapshot.tracks.find(tr => tr.id === 'track-product').items[0].title, '旧版增长取舍卡')
+  assert.equal(snapshot.triage[0].trackId, 'track-ai')
 })
 
 test('HTTP routes enforce CSRF/403, Content-Type/415, 256KB/413 guards & sinceVersion caching', async t => {
@@ -260,7 +292,7 @@ test('HTTP routes enforce CSRF/403, Content-Type/415, 256KB/413 guards & sinceVe
   })
   assert.equal(okPost.status, 200)
   const okBody = await okPost.json()
-  assert.equal(okBody.snapshot.tracks.length, 3)
+  assert.equal(okBody.snapshot.tracks.length, 4)
 })
 
 test('tool schemas omit required:false and share live mutations cleanly', async t => {

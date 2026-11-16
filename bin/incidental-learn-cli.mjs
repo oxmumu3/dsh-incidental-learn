@@ -34,7 +34,7 @@ function usage() {
     '  add       Append a candidate card (or explicit item with --explicit)',
     '            --title <text> --why <text> [--rejected <text>] [--probe <text>]',
     '            [--source antigravity|codex|dsh-chat|superagent-review|manual]',
-    '            [--track track-frontend|track-harness|track-growth] [--explicit]',
+    '            [--track track-frontend|track-engineering|track-ai|track-product] [--explicit]',
     '  status    Print ledger summary [--json]',
     '  export    Export study notes [--track <id>] [--out <path>]',
     '',
@@ -64,7 +64,7 @@ async function main() {
       rejected: flags.rejected ? String(flags.rejected) : '',
       probe: flags.probe ? String(flags.probe) : '',
       source: flags.source ? String(flags.source) : 'manual',
-      trackId: flags.track ? String(flags.track) : 'track-harness',
+      trackId: flags.track ? String(flags.track) : 'track-engineering',
       epistemic: flags.explicit ? 'explicit' : 'inferred',
     }
     const res = flags.explicit

@@ -1,11 +1,11 @@
 {
   "name": "@oxmumu3/dsh-incidental-learn",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "private": false,
   "license": "MIT",
   "type": "module",
   "main": "index.js",
-  "description": "顺带私教 for DeepSeek Harness — SHIELD Token-Lite decision cards, non-interruptive 90s right-sidebar drills, cross-Agent blind-spot ledger, and native Socratic mastery checkpoints.",
+  "description": "在日常与 Agent 协作中顺手攒经验、沉淀个人技能库的 DeepSeek Harness 插件（对话末尾低调学习卡 + 后台自动存档 + 右侧边聊边学）",
   "author": "牛村木木山 <157776623+oxmumu3@users.noreply.github.com>",
   "repository": {
     "type": "git",

@@ -152,7 +152,7 @@ const llmServer = http.createServer(async (req, res) => {
       itemId: 'item-container-cascade',
       title: '容器查询必须在基础多列规则之后声明',
       trackId: 'track-frontend',
-      trackTitle: '前端与交互品味',
+      trackTitle: '前端与界面体验',
       fromTier: 3,
       toTier: 4,
       evidenceSummary: '在制片台右侧栏宽屏分屏迁移场景中独立选对 @container 与基础规则先后顺序，完成过关。',
@@ -208,7 +208,7 @@ const llmServer = http.createServer(async (req, res) => {
       itemId: 'item-container-cascade',
       step: 1,
       totalSteps: 2,
-      trackTitle: '前端与交互品味',
+      trackTitle: '前端与界面体验',
       title: '换景盲测：制片台分屏为什么照样把双列挤爆？',
       scenario: '桌面窗口宽 1440px，但右侧面板只有 420px。下列两段 CSS 里只有一段会生效成单列：',
       question: '请先盲选判断：为什么把 @container 写在基础两列之前依然会横向溢出？',
@@ -377,6 +377,10 @@ function openApp(label) {
     '--remote-debugging-address=127.0.0.1',
     '--no-sandbox',
     '--disable-gpu',
+    '--disable-background-timer-throttling',
+    '--disable-backgrounding-occluded-windows',
+    '--disable-renderer-backgrounding',
+    '--disable-features=CalculateNativeWinOcclusion',
   ], { cwd: WORK, env: baseEnv, stdio: ['ignore', 'pipe', 'pipe'] })
   let log = ''
   child.stdout.on('data', d => { log = (log + d).slice(-60000) })
@@ -446,6 +450,8 @@ async function attachApp(app, consoleRows) {
     consoleRows.push({ kind: 'exception', text: String(p.exceptionDetails?.exception?.description ?? p.exceptionDetails?.text ?? '').slice(0, 2000) })
   })
   await page.command('Runtime.enable').catch(() => {})
+  await page.command('Page.enable').catch(() => {})
+  await page.command('Emulation.setFocusEmulationEnabled', { enabled: true }).catch(() => {})
   const evaluate = async expression => {
     const r = await page.command('Runtime.evaluate', { expression, returnByValue: true, awaitPromise: true })
     if (r.exceptionDetails) throw new Error(`evaluate: ${r.exceptionDetails.exception?.description ?? r.exceptionDetails.text ?? ''}`)
@@ -502,6 +508,8 @@ async function setHostTheme(ui, theme) {
 }
 
 async function toggleHostSidebar(ui, wantCollapsed) {
+  await ui.evaluate(`document.getAnimations({ subtree: true }).forEach(a => { try { a.finish() } catch {} })`)
+  await delay(150)
   const res = await ui.evaluate(`(() => {
     const wbRect = document.querySelector('[data-testid="ilp-workbench"], .ilp-wb, [contenteditable="true"]')?.getBoundingClientRect()
     const isCollapsed = wbRect ? wbRect.left < 70 : false
@@ -528,7 +536,7 @@ async function toggleHostSidebar(ui, wantCollapsed) {
       if (!wb) return true
       const left = wb.getBoundingClientRect().left
       return ${wantCollapsed ? 'left < 70' : 'left >= 180'}
-    })()`), 4000)
+    })()`), 6000)
     await ui.evaluate(`document.getAnimations({ subtree: true }).forEach(a => { try { a.finish() } catch {} })`)
     await delay(80)
   }
@@ -670,7 +678,7 @@ try {
   await ui.waitFor('welcome preview details closed cleanly', () => ui.evaluate(`document.querySelector('[data-testid="ilp-welcome-preview"]')?.open === false`), 4000)
 
   await ui.evaluate(`document.querySelector('[data-testid="ilp-load-samples-btn"]').click()`)
-  await ui.waitFor('sample spotlight + preview banner + 3 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelector('[data-testid="ilp-preview-banner"]') && document.querySelectorAll('.ilp-track').length === 3)`), 15000)
+  await ui.waitFor('sample spotlight + preview banner + 4 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelector('[data-testid="ilp-preview-banner"]') && document.querySelectorAll('.ilp-track').length === 4)`), 15000)
 
   // Verify non-empty header exposes non-destructive Usage Guide toggle (`使用说明`) without wiping accumulated ledger
   const guideCollapsedCheck = await ui.evaluate(`(() => {
@@ -784,7 +792,8 @@ try {
 
   // Restore empty state temporarily to capture 0/0 Visual Onboarding @2x Screenshots, then re-load samples for Probes P1..P3
   await ui.command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
-  await delay(100)
+  await setHostTheme(ui, 'light')
+  await delay(350)
   await toggleHostSidebar(ui, false)
   await delay(150)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-clear-preview-btn"]').click()`)
