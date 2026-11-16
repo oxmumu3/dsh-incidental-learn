@@ -13,12 +13,12 @@
 2. 复制下面这句话发给 Agent，弹出授权时点「允许」：
 
 ```text
-请通过插件管理器，从 npm 官方源安装并启用 @oxmumu3/dsh-incidental-learn@0.1.4。完成后请核对版本和启用状态，再带我打开左侧「顺带私教」。
+请通过插件管理器，从 npm 官方源安装并启用 @oxmumu3/dsh-incidental-learn@latest；保留已有的学习记录与技能库数据。完成后请核对版本和启用状态，再带我打开左侧「顺带私教」。
 ```
 
 ### 方式二：插件管理页直接添加
 
-进入「插件 -> 添加插件」，填入 `@oxmumu3/dsh-incidental-learn@0.1.4`（桌面端内置包管理器默认对刚发布未满 24 小时的版本启用发布年龄策略，填写带精确版本号的包名可直接装入最新版），安装后点击「立即启用」。
+进入「插件 -> 添加插件」，填入 `@oxmumu3/dsh-incidental-learn@latest`，安装后点击「立即启用」，再打开左侧「顺带私教」。
 
 ## 架构概览
 
@@ -63,5 +63,5 @@ npm run pack:release # 生成可重现 .tgz 与 .sha256
 建议在退出当前运行的桌面端后通过官方 `dsh plugin` 安装离线包：
 
 ```bash
-dsh plugin --profile desktop add ./oxmumu3-dsh-incidental-learn-0.1.4.tgz
+dsh plugin --profile desktop add ./oxmumu3-dsh-incidental-learn-<version>.tgz
 ```
