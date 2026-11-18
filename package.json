@@ -1,6 +1,6 @@
 {
   "name": "@oxmumu3/dsh-incidental-learn",
-  "version": "0.1.7",
+  "version": "0.1.8",
   "private": false,
   "license": "MIT",
   "type": "module",
@@ -74,6 +74,6 @@
   },
   "engines": {
     "node": ">=22.0.0",
-    "dsh": "0.2.2-rc.2 || 0.2.2-rc.3"
+    "dsh": ">=0.2.2-rc.2 <0.3.0"
   }
 }
