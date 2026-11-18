@@ -677,8 +677,46 @@ try {
   await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-summary"]').click()`)
   await ui.waitFor('welcome preview details closed cleanly', () => ui.evaluate(`document.querySelector('[data-testid="ilp-welcome-preview"]')?.open === false`), 4000)
 
+  // Verify 0/0 + triage state renders DirectStudyBox, actionable clear_all, and hides empty 0/0 track shells
+  await ui.evaluate(`(async () => {
+    const res = await fetch('/api/incidental_learn/action', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify({
+        action: 'capture_candidate',
+        auto: false,
+        payload: {
+          title: '临时测试空分类隐藏',
+          trackId: 'track-frontend',
+          why: 'verify empty 0/0 shells stay hidden',
+        },
+      }),
+    })
+    if (!res.ok) throw new Error('capture_candidate failed: ' + res.status)
+  })()`)
+  await ui.waitFor('0/0 + triage shows direct study launcher and hides empty tracks', () => ui.evaluate(`Boolean(
+    document.querySelector('[data-testid="ilp-direct-study"]') &&
+    document.querySelector('[data-testid="ilp-triage-clear-all"]') &&
+    document.querySelector('[data-testid="ilp-empty-tracks-note"]')
+  )`), 15000)
+  const triageNoEmptyTracksCheck = await ui.evaluate(`(() => {
+    const startBtn = document.querySelector('[data-testid="ilp-direct-start-btn"]')
+    const trackCount = document.querySelectorAll('.ilp-track').length
+    return {
+      hasStartBtn: Boolean(startBtn),
+      startIsSolid: Boolean(startBtn && startBtn.classList.contains('solid')),
+      trackCount,
+    }
+  })()`)
+  assert.equal(triageNoEmptyTracksCheck.hasStartBtn, true, 'triage workbench must render [data-testid="ilp-direct-start-btn"]')
+  assert.equal(triageNoEmptyTracksCheck.startIsSolid, true, 'direct study CTA must use .ilp-btn.solid')
+  assert.equal(triageNoEmptyTracksCheck.trackCount, 0, 'empty 0/0 tracks must remain hidden when items === 0')
+
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-triage-clear-all"]').click()`)
+  await ui.waitFor('clear_all returns to welcome screen', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-load-samples-btn"]'))`), 15000)
+
   await ui.evaluate(`document.querySelector('[data-testid="ilp-load-samples-btn"]').click()`)
-  await ui.waitFor('sample spotlight + preview banner + 4 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelector('[data-testid="ilp-preview-banner"]') && document.querySelectorAll('.ilp-track').length === 4)`), 15000)
+  await ui.waitFor('sample spotlight + direct study + preview banner + 4 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-direct-study"]') && document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelector('[data-testid="ilp-preview-banner"]') && document.querySelectorAll('.ilp-track').length === 4)`), 15000)
 
   // Verify non-empty header exposes non-destructive Usage Guide toggle (`使用说明`) without wiping accumulated ledger
   const guideCollapsedCheck = await ui.evaluate(`(() => {
@@ -789,6 +827,8 @@ try {
   await captureShot('rc3-02-workbench-1440-dark.png', 1440, 900, 'dark', false)
   await captureShot('rc3-03-workbench-split-680-dark.png', 680, 900, 'dark', true)
   await captureShot('rc3-04-workbench-narrow-390-dark.png', 390, 844, 'dark', true)
+  const narrowInputH = await ui.evaluate(`Math.round(document.querySelector('.ilp-direct-input')?.getBoundingClientRect().height || 0)`)
+  assert.ok(narrowInputH >= 30 && narrowInputH <= 52, `narrow 390px .ilp-direct-input must stay single-line (<=52px), got ${narrowInputH}`)
 
   // Restore empty state temporarily to capture 0/0 Visual Onboarding @2x Screenshots, then re-load samples for Probes P1..P3
   await ui.command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
@@ -1043,10 +1083,10 @@ try {
   const draftAfterDrawer = await ui.evaluate(`document.querySelector('[contenteditable="true"]')?.innerText?.trim()`)
   assert.ok(draftAfterDrawer.includes('正在写的业务代码说明'), `Right drawer must not disturb main composer draft; got: ${draftAfterDrawer}`)
 
-  // Click 「加入重点学」 -> promotes via save_explicit & updates digest pill in conversation.input.right!
+  // Click 「存进技能库」 -> promotes via save_explicit & updates digest pill in conversation.input.right!
   await ui.evaluate(`document.querySelector('[data-testid="ilp-shield-capture-btn"]').click()`)
   const shieldFb = await ui.waitFor('shield direct save feedback', () => ui.evaluate(`document.querySelector('[data-testid="ilp-shield-feedback"]')?.textContent || null`), 8000)
-  assert.match(shieldFb, /已标为重点待学|已在重点清单中/)
+  assert.match(shieldFb, /已存进个人技能库|已在技能库中|已标为重点待学|已在重点清单中/)
   const pillText = await ui.waitFor('composer right pill present', () => ui.evaluate(`document.querySelector('[data-testid="ilp-composer-pill"]')?.textContent || null`), 8000)
   assert.match(pillText, /^顺带学习 · 已存 \d+ 张$/)
   receipt.probeP1P2 = {

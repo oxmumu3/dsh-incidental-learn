@@ -59,8 +59,9 @@ export const ILP_CSS = [
 
   // Zero-specificity resets scoped strictly inside plugin containers (never *)
   ':where(.ilp-wb,.ilp-fence,.ilp-drawer,.ilp-dialog,.ilp-pill) [hidden]{display:none!important}',
-  ':where(.ilp-wb,.ilp-fence,.ilp-drawer,.ilp-dialog) :is(div,section,article,main,aside,header,footer,button,input,textarea,pre,code,details,summary){box-sizing:border-box}',
+  ':where(.ilp-wb,.ilp-fence,.ilp-drawer,.ilp-dialog) :is(div,section,article,main,aside,header,footer,form,label,button,input,select,textarea,pre,code,details,summary){box-sizing:border-box}',
   ':where(.ilp-wb,.ilp-fence,.ilp-drawer,.ilp-dialog) :is(h1,h2,h3,h4,p,ul,ol,pre){margin:0}',
+  ':where(.ilp-wb) :is(input,select){font:inherit;color:inherit}',
   ':where(.ilp-wb,.ilp-fence,.ilp-drawer,.ilp-dialog) button{font:inherit;color:inherit;background:none;border:0;padding:0;cursor:pointer;text-align:left}',
   '.ilp-wb :is(h1,h2,h3){text-wrap:balance}',
   '.ilp-wb :is(p,li){text-wrap:pretty}',
@@ -228,6 +229,20 @@ export const ILP_CSS = [
   '.ilp-spot-probe{font-size:12.5px;color:var(--ilp-ink2);padding:8px 11px;border-radius:var(--ilp-r-sm);background:var(--ilp-sub);border:1px solid var(--ilp-line);overflow-wrap:anywhere}',
   '.ilp-spot-acts{display:flex;flex-direction:column;align-items:stretch;gap:8px;min-width:168px}',
 
+  // Direct Focused Study Launcher (always reachable without prior triage acceptance)
+  '.ilp-direct-box{border-radius:var(--ilp-r-lg);border:1px solid var(--ilp-line);background:var(--ilp-panel);padding:16px 18px;display:flex;flex-direction:column;gap:10px;min-width:0}',
+  '.ilp-direct-box.is-hero{border-color:var(--ilp-line2);padding:18px 20px}',
+  '.ilp-direct-head{display:flex;align-items:baseline;justify-content:space-between;flex-wrap:wrap;gap:4px 12px;min-width:0}',
+  '.ilp-direct-title{font-size:14.5px;font-weight:600;color:var(--ilp-ink)}',
+  '.ilp-direct-sub{font-size:12px;color:var(--ilp-ink3);overflow-wrap:anywhere}',
+  '.ilp-direct-row{display:flex;align-items:center;gap:8px;min-width:0}',
+  '.ilp-direct-input{flex:1 1 0%;min-width:0;min-height:35px;padding:6px 11px;border-radius:var(--ilp-r-btn);border:1px solid var(--ilp-line2);background:var(--ilp-bg);color:var(--ilp-ink);font-size:13px;line-height:1.4}',
+  '.ilp-direct-input::placeholder{color:var(--ilp-ink3)}',
+  '.ilp-direct-ws{max-width:180px;min-height:35px;padding:6px 10px;border-radius:var(--ilp-r-btn);border:1px solid var(--ilp-line2);background:var(--ilp-bg);color:var(--ilp-ink2);font-size:12px}',
+  '.ilp-direct-chips{display:flex;flex-wrap:wrap;align-items:center;gap:6px;min-width:0}',
+  '.ilp-chip-btn{display:inline-flex;align-items:center;min-height:25px;padding:3px 10px;border-radius:999px;border:1px solid var(--ilp-line);background:var(--ilp-sub);color:var(--ilp-ink2);font-size:11.5px;line-height:1.3}',
+  '@media (hover:hover){.ilp-chip-btn:hover:not(:disabled){background:var(--ilp-hover);border-color:var(--ilp-line2);color:var(--ilp-ink)}}',
+
   // Collapsible Background Auto-Archive Inbox
   '.ilp-triage-box{border-radius:var(--ilp-r-md);border:1px solid var(--ilp-line);background:var(--ilp-panel);overflow:hidden;min-width:0}',
   '.ilp-triage-head{width:100%;padding:12px 16px;display:flex;align-items:center;justify-content:space-between;gap:10px;background:var(--ilp-panel);min-width:0}',
@@ -235,12 +250,14 @@ export const ILP_CSS = [
   '.ilp-triage-head-left{display:flex;align-items:center;flex-wrap:wrap;gap:8px;min-width:0}',
   '.ilp-triage-body{border-top:1px solid var(--ilp-line);display:flex;flex-direction:column}',
   '.ilp-triage-batch{padding:10px 16px;background:var(--ilp-wait-bg);border-bottom:1px solid var(--ilp-line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px}',
+  '.ilp-triage-subbar{padding:9px 16px;background:var(--ilp-sub);border-bottom:1px solid var(--ilp-line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:8px 12px;font-size:12px;color:var(--ilp-ink2)}',
   '.ilp-triage-row{padding:12px 16px;border-bottom:1px solid var(--ilp-line);display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:10px 14px;min-width:0}',
   '.ilp-triage-row:last-child{border-bottom:0}',
   '.ilp-triage-info{flex:1 1 280px;min-width:0;display:flex;flex-direction:column;gap:4px}',
   '.ilp-triage-title{font-weight:500;font-size:13px;overflow-wrap:anywhere}',
   '.ilp-triage-why{font-size:12px;color:var(--ilp-ink2);overflow-wrap:anywhere}',
-  '.ilp-triage-acts{display:flex;align-items:center;gap:6px;flex-shrink:0}',
+  '.ilp-triage-acts{display:flex;align-items:center;flex-wrap:wrap;gap:6px;flex-shrink:0}',
+  '.ilp-empty-tracks-note{font-size:12px;color:var(--ilp-ink3);padding:2px 2px;overflow-wrap:anywhere}',
 
   // Accordion Capability Tracks
   '.ilp-tracks{display:flex;flex-direction:column;gap:10px;min-width:0}',
@@ -395,7 +412,13 @@ export const ILP_CSS = [
   '  .ilp-sim-sep{display:none}',
   '  .ilp-spot-card{grid-template-columns:minmax(0,1fr);padding:18px}',
   '  .ilp-spot-acts{flex-direction:row;flex-wrap:wrap;min-width:0}',
+  '  .ilp-direct-row{flex-direction:column;align-items:stretch}',
+  '  .ilp-direct-input{flex:none;width:100%}',
+  '  .ilp-direct-ws{max-width:none}',
   '  .ilp-course-grid{grid-template-columns:minmax(0,1fr)}',
+  '}',
+  '@media (pointer:coarse){',
+  '  .ilp-direct-input,.ilp-direct-ws{font-size:16px}',
   '}',
   '@container ilpwb (max-width:660px){',
   '  .ilp-wb-inner{padding:48px 14px 48px}',
@@ -414,7 +437,7 @@ export const ILP_CSS = [
 
   // Forced Colors High-Contrast Fallbacks
   '@media (forced-colors:active){',
-  '  .ilp-btn,.ilp-sim-btn,.ilp-quiet-btn,.ilp-source-badge,.ilp-badge-card,.ilp-tag,.ilp-onb-step,.ilp-sim-disclosure,.ilp-strip-details,.ilp-mini-win,.ilp-mini-embed,.ilp-toast,dialog.ilp-dialog{border:1px solid ButtonBorder}',
+  '  .ilp-btn,.ilp-sim-btn,.ilp-quiet-btn,.ilp-source-badge,.ilp-badge-card,.ilp-tag,.ilp-onb-step,.ilp-sim-disclosure,.ilp-strip-details,.ilp-mini-win,.ilp-mini-embed,.ilp-toast,.ilp-direct-box,.ilp-direct-input,.ilp-direct-ws,.ilp-chip-btn,dialog.ilp-dialog{border:1px solid ButtonBorder}',
   '  .ilp-btn.solid{background:Highlight;color:HighlightText;border-color:Highlight}',
   '  .ilp-sim-btn[aria-pressed="true"],.ilp-quiet-btn[aria-pressed="true"]{outline:2px solid Highlight;outline-offset:1px}',
   '  .ilp-sim-sep{border-left-color:ButtonBorder}',

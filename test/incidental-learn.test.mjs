@@ -14,6 +14,7 @@ import { handleActionRequest, handleViewRequest } from '../lib/routes.js'
 import { createLearnTools } from '../lib/tools.js'
 import {
   buildDeepLearnStarterPrompt,
+  inferTrackIdFromTopic,
   parseLearnPassFence,
   parseLearnQuizFence,
   parseShieldFence,
@@ -89,6 +90,22 @@ test('fence parsers handle JSON, 4-line text SHIELD fallback, quiz, and pass blo
 
   const starter = buildDeepLearnStarterPrompt({ id: 'x1', title: 'Test', masteryTier: 2 })
   assert.ok(starter.startsWith('[顺带私教·专心闯关]'))
+  assert.ok(starter.includes('这是我主动发起的专心学习主题'))
+  const fullStarter = buildDeepLearnStarterPrompt({
+    id: 'x2',
+    title: 'Card',
+    masteryTier: 1,
+    rejected: 'Opt A',
+    probe: 'Why?',
+  })
+  assert.ok(fullStarter.startsWith('[顺带私教·专心闯关]'))
+  assert.ok(fullStarter.includes('曾经对比过的坑：Opt A'))
+  assert.ok(fullStarter.includes('摸底种子：Why?'))
+  assert.ok(!fullStarter.includes('这是我主动发起的专心学习主题'))
+  assert.equal(inferTrackIdFromTopic('CSS Grid 容器查询'), 'track-frontend')
+  assert.equal(inferTrackIdFromTopic('Agent Prompt 工具调用'), 'track-ai')
+  assert.equal(inferTrackIdFromTopic('产品增长与定价转化'), 'track-product')
+  assert.equal(inferTrackIdFromTopic('API 架构与并发事务'), 'track-engineering')
 })
 
 test('atomic ledger, external mtimeMs reload, triage batch >5 & undoStack work across two writers', async t => {
@@ -423,4 +440,42 @@ test('zero-click auto-staging deduplicates, avoids undo pollution, and cleans up
   const saved = await store.saveExplicitItem({ ...payload2, epistemic: 'explicit' })
   assert.equal(saved.snapshot.items.some(it => it.title === payload2.title), true)
   assert.equal(saved.snapshot.triage.some(c => c.title === payload2.title), false, 'saveExplicitItem must clear auto-staged candidate from triage')
+})
+
+test('triage clear_all supports undoLast and skip records cardKey in dismissedCardKeys', async () => {
+  const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'ilp-triage-clear-'))
+  try {
+    const store = await createLedgerStore({ dshHome: dir, locale: 'zh' })
+
+    const c1 = await store.captureCandidate(
+      { title: '第一张待整理卡', trackId: 'track-frontend', why: 'reason 1' },
+      { auto: true, cardKey: 'ck-clear-1' }
+    )
+    const c2 = await store.captureCandidate(
+      { title: '第二张待整理卡', trackId: 'track-ai', why: 'reason 2' },
+      { auto: true, cardKey: 'ck-clear-2' }
+    )
+    assert.equal(c2.snapshot.triage.length, 2)
+
+    // Skip first card -> records cardKey in dismissedCardKeys and suppresses duplicate auto capture
+    const skipped = await store.triageDecision({ id: c1.candidate.id, decision: 'skip' })
+    assert.equal(skipped.snapshot.triage.length, 1)
+    const rawAfterSkip = JSON.parse(fs.readFileSync(path.join(dir, 'incidental-learn', 'ledger.json'), 'utf8'))
+    assert.ok(Array.isArray(rawAfterSkip.dismissedCardKeys) && rawAfterSkip.dismissedCardKeys.includes('ck-clear-1'))
+
+    // Clear all remaining triage cards -> pushes undo snapshot and records remaining dismissedCardKeys
+    const cleared = await store.triageBatch({ mode: 'clear_all' })
+    assert.equal(cleared.affected, 1)
+    assert.equal(cleared.snapshot.triage.length, 0)
+    const rawAfterClear = JSON.parse(fs.readFileSync(path.join(dir, 'incidental-learn', 'ledger.json'), 'utf8'))
+    assert.ok(rawAfterClear.dismissedCardKeys.includes('ck-clear-2'))
+
+    // Undo restores the cleared triage card
+    const undone = await store.undoLast()
+    assert.equal(undone.undone, true)
+    assert.equal(undone.snapshot.triage.length, 1)
+    assert.equal(undone.snapshot.triage[0].title, '第二张待整理卡')
+  } finally {
+    fs.rmSync(dir, { recursive: true, force: true })
+  }
 })

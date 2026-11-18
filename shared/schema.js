@@ -440,15 +440,32 @@ export function parseLearnPassFence(code) {
   }
 }
 
+export function inferTrackIdFromTopic(text) {
+  const s = String(text || '')
+  if (/css|flex|grid|container|dialog|布局|样式|动画|前端|界面|颜色|主题|弹窗|悬浮|分屏|按钮|组件/i.test(s)) {
+    return 'track-frontend'
+  }
+  if (/prompt|agent|token|mcp|tool|llm|模型|提示词|上下文|多智能体|围栏/i.test(s)) {
+    return 'track-ai'
+  }
+  if (/增长|转化|标题|留存|分发|引导|文案|小红书|公众号|首屏|定位|用户|产品/i.test(s)) {
+    return 'track-product'
+  }
+  return 'track-engineering'
+}
+
 export function buildDeepLearnStarterPrompt(item) {
   const safe = item && typeof item === 'object' ? item : {}
   const tierLabel = MASTERY_LABELS[clampTier(safe.masteryTier || 1)]
+  const isAdHoc = !safe.rejected && !safe.probe
   return [
     '[顺带私教·专心闯关]',
     `知识点：${cleanText(safe.title, 140) || '当前盲区'}（itemId: ${cleanText(safe.id, 80) || 'ad-hoc'}，当前掌握度：${tierLabel}）`,
     safe.why ? `背景取舍：${cleanText(safe.why, 220)}` : '',
     safe.rejected ? `曾经对比过的坑：${cleanText(safe.rejected, 180)}` : '',
     safe.probe ? `摸底种子：${cleanText(safe.probe, 180)}` : '',
-    '请严格按「先探后讲 + 换景追问」节奏带我过关：第 1 轮直接输出一个 ```learn-quiz JSON 代码块让我先盲选判断并停下等我回复，暂不要剧透完整解释。',
+    isAdHoc
+      ? '这是我主动发起的专心学习主题（若涉及当前工作区代码，可先快速只读扫一眼关键实现）。请严格按「先探后讲 + 换景追问」节奏带我一对一闯关：第 1 轮直接输出一个 ```learn-quiz JSON 代码块让我先盲选判断并停下等我回复，暂不要剧透完整解释。'
+      : '请严格按「先探后讲 + 换景追问」节奏带我过关：第 1 轮直接输出一个 ```learn-quiz JSON 代码块让我先盲选判断并停下等我回复，暂不要剧透完整解释。',
   ].filter(Boolean).join('\n')
 }

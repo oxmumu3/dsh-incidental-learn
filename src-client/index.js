@@ -56,6 +56,7 @@ var AUTO_CAPTURED_KEYS = new Set()
 
 function createClientLedgerBridge() {
   var snapshot = null
+  var workspaces = []
   var loading = false
   var error = null
   var listeners = new Set()
@@ -63,13 +64,14 @@ function createClientLedgerBridge() {
 
   function emit() {
     listeners.forEach(function (fn) {
-      try { fn({ snapshot: snapshot, loading: loading, error: error }) } catch (_e) {}
+      try { fn({ snapshot: snapshot, workspaces: workspaces, loading: loading, error: error }) } catch (_e) {}
     })
   }
 
-  function setSnapshot(next) {
+  function setSnapshot(next, nextWorkspaces) {
     if (!next) return
     snapshot = next
+    if (Array.isArray(nextWorkspaces)) workspaces = nextWorkspaces
     versionSeen = next.version
     error = null
     loading = false
@@ -82,8 +84,9 @@ function createClientLedgerBridge() {
     return fetchJson(VIEW_URL + qs, { headers: { Accept: 'application/json' } })
       .then(function (res) {
         if (!res.unchanged && res.snapshot) {
-          setSnapshot(res.snapshot)
+          setSnapshot(res.snapshot, res.workspaces)
         } else {
+          if (Array.isArray(res.workspaces)) workspaces = res.workspaces
           loading = false
           error = null
           emit()
@@ -100,7 +103,7 @@ function createClientLedgerBridge() {
 
   function runAction(action, payload) {
     return postLearnAction(action, payload).then(function (res) {
-      if (res && res.snapshot) setSnapshot(res.snapshot)
+      if (res && res.snapshot) setSnapshot(res.snapshot, res.workspaces)
       return res
     })
   }
@@ -111,7 +114,7 @@ function createClientLedgerBridge() {
   }
 
   return {
-    getState: function () { return { snapshot: snapshot, loading: loading, error: error } },
+    getState: function () { return { snapshot: snapshot, workspaces: workspaces, loading: loading, error: error } },
     refresh: refresh,
     runAction: runAction,
     subscribe: subscribe,
@@ -185,10 +188,10 @@ function hashCardKey(parsed, fallbackSeed) {
   return 'card-' + Math.abs(hVal).toString(36)
 }
 
-function openDeepLearnSession(ctx, item) {
+function openDeepLearnSession(ctx, item, preferredWorkspaceId) {
   var prompt = buildDeepLearnStarterPrompt(item)
   return postLearnAction('ensure_practice_workspace', {}).then(function (res) {
-    var wsId = res && res.workspace && res.workspace.workspaceId
+    var wsId = preferredWorkspaceId || (res && res.workspace && res.workspace.workspaceId)
     var layout = getHostService(ctx, 'layout')
     var uiWorkspace = getHostService(ctx, 'uiWorkspace')
     var sessions = getHostService(ctx, 'sessions')
@@ -355,7 +358,7 @@ function openStarterChatSession(ctx) {
   }
   var uiWorkspace = getHostService(ctx, 'uiWorkspace')
   var sessions = getHostService(ctx, 'sessions')
-  var conv = getHostService(ctx, 'conversations')
+  var conv = getHostService(ctx, 'conversation') || getHostService(ctx, 'conversations')
   var starterPrompt = '帮我检查一下当前项目的结构与改动方案，如果遇到值得留心的工程、架构或前端设计经验，干完顺手附一张顺带学习卡。'
   return postLearnAction('ensure_practice_workspace', {}).catch(function () { return null }).then(function (res) {
     var wsId = (res && res.workspace && res.workspace.workspaceId) || undefined
@@ -400,16 +403,16 @@ var SIM_OUTCOMES = {
     takeaway: '手头刚好有空时点一下，在右边花一两分钟直接把这条经验学明白。',
   },
   save: {
-    chatBadge: '已加入重点',
+    chatBadge: '已存技能库',
     chatBadgeClass: 'ilp-tag run',
     collapsed: false,
     wbTitle: '顺带私教里',
-    wbBadge: '标为重点待学',
+    wbBadge: '已存进技能库',
     wbBadgeClass: 'ilp-tag run',
-    wbHeading: '直接放进「重点学习清单」',
-    wbLine1: '觉得这条经验很实用，但眼下正忙，先标上重点',
-    wbLine2: '下次点进顺带私教时优先排在前面，方便集中去学',
-    takeaway: '适合眼下没空细看、但觉得这条经验很值钱，先标成重点留着集中学。',
+    wbHeading: '直接放进「个人技能库」',
+    wbLine1: '觉得这条经验很实用，先正式存进对应分类里',
+    wbLine2: '下次点进顺带私教时优先排在前面，方便随时开练',
+    takeaway: '适合眼下没空细看、但确定值得留下慢慢消化的实用经验。',
   },
   dismiss: {
     chatBadge: '已收起卡片',
@@ -583,7 +586,7 @@ function makeVisualGuideComponent(React) {
               ),
               h('div', { className: 'ilp-wf-btn-row' },
                 h('span', { className: 'ilp-wf-mini-btn' }, '展开学习'),
-                h('span', { className: 'ilp-wf-mini-btn' }, '加入重点'),
+                h('span', { className: 'ilp-wf-mini-btn' }, '存技能库'),
                 h('span', { className: 'ilp-wf-mini-btn' }, '已掌握'),
               ),
             ),
@@ -732,7 +735,7 @@ function makeVisualGuideComponent(React) {
           },
             h('div', { className: 'ilp-sim-group', role: 'group', 'aria-label': '学习卡操作按钮' },
               makeSimToolbarButton('coach', '当场展开学', ''),
-              makeSimToolbarButton('save', '加入重点学', ''),
+              makeSimToolbarButton('save', '存进技能库', ''),
               makeSimToolbarButton('dismiss', '已掌握，收起', ''),
             ),
             h('span', { role: 'separator', 'aria-orientation': 'vertical', className: 'ilp-sim-sep' }),
@@ -761,7 +764,7 @@ function makeVisualGuideComponent(React) {
                     ),
                     h('div', { className: 'ilp-mini-embed-pills' },
                       h('span', { className: 'ilp-mini-pill' + (simMode === 'coach' ? ' is-hi' : '') }, '在右侧边聊边学'),
-                      h('span', { className: 'ilp-mini-pill' + (simMode === 'save' ? ' is-hi' : '') }, '加入重点学'),
+                      h('span', { className: 'ilp-mini-pill' + (simMode === 'save' ? ' is-hi' : '') }, '存进技能库'),
                       h('span', { className: 'ilp-mini-pill' + (simMode === 'dismiss' ? ' is-hi' : '') }, '已掌握，收起'),
                     ),
                   ),
@@ -823,9 +826,21 @@ function makeWorkbenchComponent(React, ctx, bridge) {
     var triageOpen = triageOpenTuple[0]
     var setTriageOpen = triageOpenTuple[1]
 
-    var expandedTrackTuple = React.useState({ 'track-frontend': true })
+    var expandedTrackTuple = React.useState({})
     var expandedTracks = expandedTrackTuple[0]
     var setExpandedTracks = expandedTrackTuple[1]
+
+    var directTopicTuple = React.useState('')
+    var directTopic = directTopicTuple[0]
+    var setDirectTopic = directTopicTuple[1]
+
+    var selectedWsTuple = React.useState('')
+    var selectedWsId = selectedWsTuple[0]
+    var setSelectedWsId = selectedWsTuple[1]
+
+    var startingDirectTuple = React.useState(false)
+    var startingDirect = startingDirectTuple[0]
+    var setStartingDirect = startingDirectTuple[1]
 
     var courseOpenTuple = React.useState(false)
     var courseOpen = courseOpenTuple[0]
@@ -882,18 +897,66 @@ function makeWorkbenchComponent(React, ctx, bridge) {
         }
       } else {
         autoOpenedTriageRef.current = false
+        if (currentTriageLen === 0 && triageOpen) {
+          setTriageOpen(false)
+        }
       }
-    }, [currentStats.totalItems, currentTriageLen])
+    }, [currentStats.totalItems, currentTriageLen, triageOpen])
 
     function showToast(text, canUndo) {
       setToast({ text: text, canUndo: !!canUndo })
     }
 
-    function toggleTrack(id) {
+    function toggleTrack(id, currentlyOpen) {
       setExpandedTracks(function (prev) {
         var next = Object.assign({}, prev)
-        next[id] = !prev[id]
+        next[id] = !currentlyOpen
         return next
+      })
+    }
+
+    var workspaces = Array.isArray(bridgeState.workspaces) ? bridgeState.workspaces : []
+    var effectiveWsId = selectedWsId || (workspaces[0] && workspaces[0].id) || undefined
+
+    var DIRECT_TOPICS = [
+      '复盘当前工作区刚改过的关键取舍',
+      '前端自适应布局与原生组件避坑',
+      '接口边界、并发写盘与架构取舍',
+      'Agent 提示词省流与工具设计',
+    ]
+
+    function handleStartDirectStudy(e) {
+      if (e && e.preventDefault) e.preventDefault()
+      if (startingDirect) return
+      var topicTitle = directTopic.trim() || '结合当前工作区最近一次关键改动，挑一个核心取舍带我专心闯关'
+      setStartingDirect(true)
+      bridge.runAction('save_explicit', {
+        payload: {
+          title: topicTitle,
+          trackId: inferTrackIdFromTopic(topicTitle),
+          source: 'manual',
+          epistemic: 'explicit',
+          why: '由顺带私教工作台主动发起专心学习，通过一问一答闯关沉淀证据。',
+        },
+      }).then(function (res) {
+        var item = (res && res.item) || { title: topicTitle }
+        setDirectTopic('')
+        return openDeepLearnSession(ctx, item, effectiveWsId)
+      }).then(function () {
+        setStartingDirect(false)
+      }).catch(function (err) {
+        setStartingDirect(false)
+        showToast('开启专心学习失败：' + err.message, false)
+      })
+    }
+
+    function handleDrillTriage(cand) {
+      if (!cand) return
+      bridge.runAction('triage_item', { id: cand.id, decision: 'accept' }).then(function (res) {
+        var item = (res && res.item) || cand
+        return openDeepLearnSession(ctx, item, effectiveWsId)
+      }).catch(function (err) {
+        showToast('开启专心学习失败：' + err.message, false)
       })
     }
 
@@ -901,6 +964,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
       bridge.runAction('load_sample_pack', {}).then(function () {
         setIsPreviewSamples(true)
         setGuideOpen(false)
+        setTriageOpen(false)
         showToast('已载入多 Agent 演示样本', true)
       }).catch(function (err) {
         showToast('加载失败：' + err.message, false)
@@ -914,6 +978,8 @@ function makeWorkbenchComponent(React, ctx, bridge) {
         setCourseOpen(false)
         setExportInfo(null)
         setTriageOpen(false)
+        setDirectTopic('')
+        setExpandedTracks({})
         autoOpenedTriageRef.current = false
         showToast('已清空恢复空台账', true)
       }).catch(function () {})
@@ -921,14 +987,14 @@ function makeWorkbenchComponent(React, ctx, bridge) {
 
     function handleStartDeepDrill(item) {
       if (!item) return
-      openDeepLearnSession(ctx, item).catch(function (err) {
+      openDeepLearnSession(ctx, item, effectiveWsId).catch(function (err) {
         showToast('打开闯关会话失败：' + err.message, false)
       })
     }
 
     function handleTriageOne(id, decision) {
       bridge.runAction('triage_item', { id: id, decision: decision }).then(function (res) {
-        showToast(decision === 'accept' ? '已收入能力路线' : '已略过该候选', !!(res && res.snapshot && res.snapshot.canUndo))
+        showToast(decision === 'accept' ? '已存进个人技能库' : '已删掉该存档', !!(res && res.snapshot && res.snapshot.canUndo))
       }).catch(function (err) {
         showToast('操作失败：' + err.message, false)
       })
@@ -937,7 +1003,10 @@ function makeWorkbenchComponent(React, ctx, bridge) {
     function handleTriageBatch(mode) {
       bridge.runAction('triage_batch', { mode: mode }).then(function (res) {
         var count = (res && res.affected) || 0
-        showToast(mode === 'accept_all' ? ('已一键收入 ' + count + ' 条候选') : ('已清理 ' + count + ' 条低价值候选'), true)
+        var msg = mode === 'clear_all'
+          ? ('已清空 ' + count + ' 张自动存档')
+          : (mode === 'accept_all' ? ('已一键存进 ' + count + ' 条技能') : ('已清理 ' + count + ' 条低价值存档'))
+        showToast(msg, true)
       }).catch(function (err) {
         showToast('批量处理失败：' + err.message, false)
       })
@@ -999,11 +1068,66 @@ function makeWorkbenchComponent(React, ctx, bridge) {
       )
     }
 
-    var stats = snap.stats || { masteredItems: 0, totalItems: 0, trackCount: 3, triageCount: 0 }
+    var stats = snap.stats || { masteredItems: 0, totalItems: 0, trackCount: 4, triageCount: 0 }
     var tracks = snap.tracks || []
+    var populatedTracks = tracks.filter(function (t) { return t.items && t.items.length > 0 })
+    var emptyTrackNames = tracks.filter(function (t) { return !t.items || t.items.length === 0 }).map(function (t) { return t.title })
+    var firstPopTrackId = populatedTracks[0] ? populatedTracks[0].id : ''
     var triage = snap.triage || []
     var spotlight = snap.spotlight
     var isCompletelyEmpty = stats.totalItems === 0 && triage.length === 0
+
+    function renderDirectStudyBox(isHero) {
+      return h('form', {
+        className: 'ilp-direct-box' + (isHero ? ' is-hero' : ''),
+        'data-testid': 'ilp-direct-study',
+        onSubmit: handleStartDirectStudy,
+      },
+        h('div', { className: 'ilp-direct-head' },
+          h('span', { className: 'ilp-direct-title' }, '直接开启专心学习（1 对 1 闯关对话）'),
+          h('span', { className: 'ilp-direct-sub' }, '不必先挑旧存档；填一个现在想弄懂的问题或直接点选下方主题，一键跳进专心学习对话。'),
+        ),
+        h('div', { className: 'ilp-direct-row' },
+          h('input', {
+            type: 'text',
+            className: 'ilp-direct-input',
+            'data-testid': 'ilp-direct-topic-input',
+            'aria-label': '输入想专心学习的主题',
+            placeholder: '例如：复盘当前项目刚改的权限边界 / CSS 容器查询先后顺序（留空也可直接开练）',
+            value: directTopic,
+            onChange: function (e) { setDirectTopic(e.target.value) },
+          }),
+          workspaces.length > 0 ? h('select', {
+            className: 'ilp-direct-ws',
+            'data-testid': 'ilp-direct-ws-select',
+            'aria-label': '选择学习关联的工作区',
+            value: effectiveWsId || '',
+            onChange: function (e) { setSelectedWsId(e.target.value) },
+          },
+            workspaces.map(function (ws) {
+              return h('option', { key: ws.id, value: ws.id }, ws.name || ws.id)
+            }),
+          ) : null,
+          h('button', {
+            type: 'submit',
+            className: 'ilp-btn ' + (isHero ? 'solid' : 'line'),
+            'data-testid': 'ilp-direct-start-btn',
+            disabled: startingDirect,
+          }, startingDirect ? '正在开启…' : '开始专心学'),
+        ),
+        h('div', { className: 'ilp-direct-chips' },
+          DIRECT_TOPICS.map(function (chip, idx) {
+            return h('button', {
+              key: String(idx),
+              type: 'button',
+              className: 'ilp-chip-btn',
+              'data-testid': 'ilp-direct-chip-' + idx,
+              onClick: function () { setDirectTopic(chip) },
+            }, chip)
+          }),
+        ),
+      )
+    }
 
     return h('div', { className: 'ilp-wb', 'data-testid': 'ilp-workbench' },
       h('div', { className: 'ilp-wb-inner' },
@@ -1080,11 +1204,7 @@ function makeWorkbenchComponent(React, ctx, bridge) {
                 }))
           : null,
 
-        stats.totalItems === 0 && triage.length > 0 ? h('div', { className: 'ilp-onb-triage-tip', 'data-testid': 'ilp-empty-triage-tip' },
-          '个人技能库目前 0 项，但下方已自动帮你接住平时对话里出现的顺带学习卡：点「加入重点学」就开始跟踪练习，点「跳过」则直接清掉。',
-        ) : null,
-
-        // Single Spotlight Hero Card
+        // Single Spotlight Hero Card (when accumulated items > 0) vs Direct Study Hero (when 0 items)
         spotlight ? h('section', { className: 'ilp-spot-card', 'data-testid': 'ilp-spotlight' },
           h('div', { className: 'ilp-spot-main' },
             h('div', { className: 'ilp-spot-eyebrow' },
@@ -1116,6 +1236,8 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           ),
         ) : null,
 
+        renderDirectStudyBox(!isCompletelyEmpty && !spotlight),
+
         // 1-Line Default-Collapsed Background Auto-Archive
         triage.length > 0 ? h('section', { className: 'ilp-triage-box', 'data-testid': 'ilp-triage-box' },
           h('button', {
@@ -1127,28 +1249,44 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           },
             h('span', { className: 'ilp-triage-head-left' },
               h('span', { className: 'ilp-tag ' + (snap.triageOverCap ? 'wait' : 'outline') }, '后台自动存档 · ' + triage.length + ' 张'),
-              h('span', { className: 'ilp-summary' }, snap.triageOverCap ? '待看卡片超过 5 张，建议批量清理或全部加入' : '平时对话里先放着没点的学习卡，都自动帮你存在这里'),
+              h('span', { className: 'ilp-summary' }, snap.triageOverCap ? '待看卡片超过 5 张，可批量清理、全部存进技能库或一键清空' : '平时对话先放着没点的卡片；想练直接点「拿这张去练」，不要的可点「删掉」'),
             ),
             h('span', { className: 'ilp-btn ghost xs' }, triageOpen ? '收起' : '展开查看'),
           ),
           triageOpen ? h('div', { className: 'ilp-triage-body' },
-            triage.length > 5 ? h('div', { className: 'ilp-triage-batch', 'data-testid': 'ilp-triage-batch' },
-              h('span', { style: { fontSize: '12px', fontWeight: 600 } }, '整理提醒：后台共自动存了 ' + triage.length + ' 张待看卡片'),
-              h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
-                h('button', {
-                  type: 'button',
-                  className: 'ilp-btn line xs',
-                  'data-testid': 'ilp-batch-sweep-low',
-                  onClick: function () { handleTriageBatch('sweep_low_value') },
-                }, '清理细碎卡片'),
-                h('button', {
-                  type: 'button',
-                  className: 'ilp-btn solid xs',
-                  'data-testid': 'ilp-batch-accept-all',
-                  onClick: function () { handleTriageBatch('accept_all') },
-                }, '全部加入重点学'),
-              ),
-            ) : null,
+            triage.length > 5
+              ? h('div', { className: 'ilp-triage-batch', 'data-testid': 'ilp-triage-batch' },
+                  h('span', { style: { fontSize: '12px', fontWeight: 600 } }, '整理提醒：后台共自动存了 ' + triage.length + ' 张待看卡片'),
+                  h('div', { style: { display: 'flex', gap: '6px', flexWrap: 'wrap' } },
+                    h('button', {
+                      type: 'button',
+                      className: 'ilp-btn line xs',
+                      'data-testid': 'ilp-batch-sweep-low',
+                      onClick: function () { handleTriageBatch('sweep_low_value') },
+                    }, '清理细碎卡片'),
+                    h('button', {
+                      type: 'button',
+                      className: 'ilp-btn solid xs',
+                      'data-testid': 'ilp-batch-accept-all',
+                      onClick: function () { handleTriageBatch('accept_all') },
+                    }, '全部存进技能库'),
+                    h('button', {
+                      type: 'button',
+                      className: 'ilp-btn ghost xs',
+                      'data-testid': 'ilp-triage-clear-all',
+                      onClick: function () { handleTriageBatch('clear_all') },
+                    }, '一键清空存档'),
+                  ),
+                )
+              : h('div', { className: 'ilp-triage-subbar' },
+                  h('span', null, '点「拿这张去练」直接新开一对一闯关对话；不想留的存档可直接删掉或一键清空。'),
+                  h('button', {
+                    type: 'button',
+                    className: 'ilp-btn ghost xs',
+                    'data-testid': 'ilp-triage-clear-all',
+                    onClick: function () { handleTriageBatch('clear_all') },
+                  }, '一键清空存档'),
+                ),
             triage.map(function (cand) {
               return h('div', { key: cand.id, className: 'ilp-triage-row', 'data-testid': 'ilp-triage-row-' + cand.id },
                 h('div', { className: 'ilp-triage-info' },
@@ -1163,16 +1301,22 @@ function makeWorkbenchComponent(React, ctx, bridge) {
                 h('div', { className: 'ilp-triage-acts' },
                   h('button', {
                     type: 'button',
+                    className: 'ilp-btn soft xs',
+                    'data-testid': 'ilp-triage-drill-' + cand.id,
+                    onClick: function () { handleDrillTriage(cand) },
+                  }, '拿这张去练'),
+                  h('button', {
+                    type: 'button',
                     className: 'ilp-btn line xs',
                     'data-testid': 'ilp-triage-accept-' + cand.id,
                     onClick: function () { handleTriageOne(cand.id, 'accept') },
-                  }, '加入重点学'),
+                  }, '先存着'),
                   h('button', {
                     type: 'button',
                     className: 'ilp-btn ghost xs',
                     'data-testid': 'ilp-triage-skip-' + cand.id,
                     onClick: function () { handleTriageOne(cand.id, 'skip') },
-                  }, '跳过'),
+                  }, '删掉'),
                 ),
               )
             }),
@@ -1220,17 +1364,19 @@ function makeWorkbenchComponent(React, ctx, bridge) {
           h('pre', { className: 'ilp-code-pre', style: { maxHeight: '160px', overflowY: 'auto' } }, exportInfo.markdown),
         ) : null,
 
-        // Accordion Skill Categories (Category 1 open by default; 2 & 3 collapsed)
-        tracks.length > 0 && !isCompletelyEmpty ? h('section', { className: 'ilp-tracks', 'data-testid': 'ilp-tracks' },
+        // Populated Skill Categories ONLY (never render empty 0/0 clickable shells!)
+        populatedTracks.length > 0 ? h('section', { className: 'ilp-tracks', 'data-testid': 'ilp-tracks' },
           h('div', { className: 'ilp-section-label' }, '沉淀下来的技能分类（可随时查看学习记录）'),
-          tracks.map(function (track) {
-            var isOpen = !!expandedTracks[track.id]
+          populatedTracks.map(function (track) {
+            var isOpen = Object.prototype.hasOwnProperty.call(expandedTracks, track.id)
+              ? !!expandedTracks[track.id]
+              : (track.id === firstPopTrackId)
             return h('div', { key: track.id, className: 'ilp-track', 'data-testid': 'ilp-track-' + track.id },
               h('button', {
                 type: 'button',
                 className: 'ilp-track-head',
                 'aria-expanded': isOpen ? 'true' : 'false',
-                onClick: function () { toggleTrack(track.id) },
+                onClick: function () { toggleTrack(track.id, isOpen) },
               },
                 h('div', { className: 'ilp-track-meta' },
                   h('span', { className: 'ilp-track-title' }, track.title),
@@ -1244,43 +1390,44 @@ function makeWorkbenchComponent(React, ctx, bridge) {
                 ),
               ),
               isOpen ? h('div', { className: 'ilp-track-list' },
-                track.items.length === 0
-                  ? h('div', { className: 'ilp-item-row' },
-                      h('span', { className: 'ilp-summary' }, '该分类暂无条目，可在对话学习卡点「加入重点学」或从后台自动存档加入。'),
-                    )
-                  : track.items.map(function (item) {
-                      return h('div', { key: item.id, className: 'ilp-item-row', 'data-testid': 'ilp-item-' + item.id },
-                        h('div', { className: 'ilp-item-main' },
-                          h('div', { className: 'ilp-item-badges' },
-                            sourceTag(h, item.source),
-                            epistemicTag(h, item.epistemic),
-                            makeMasteryMeter(h, item.masteryTier),
-                          ),
-                          h('button', {
-                            type: 'button',
-                            className: 'ilp-item-title',
-                            onClick: function () { setModalItem(item) },
-                          }, item.title),
-                          item.evidenceSummary ? h('p', { className: 'ilp-item-evidence' }, item.evidenceSummary) : null,
-                        ),
-                        h('div', { className: 'ilp-item-acts' },
-                          h('button', {
-                            type: 'button',
-                            className: 'ilp-btn line xs',
-                            onClick: function () { setModalItem(item) },
-                          }, '学习记录'),
-                          h('button', {
-                            type: 'button',
-                            className: 'ilp-btn soft xs',
-                            onClick: function () { handleStartDeepDrill(item) },
-                          }, '展开学'),
-                        ),
-                      )
-                    }),
+                track.items.map(function (item) {
+                  return h('div', { key: item.id, className: 'ilp-item-row', 'data-testid': 'ilp-item-' + item.id },
+                    h('div', { className: 'ilp-item-main' },
+                      h('div', { className: 'ilp-item-badges' },
+                        sourceTag(h, item.source),
+                        epistemicTag(h, item.epistemic),
+                        makeMasteryMeter(h, item.masteryTier),
+                      ),
+                      h('button', {
+                        type: 'button',
+                        className: 'ilp-item-title',
+                        onClick: function () { setModalItem(item) },
+                      }, item.title),
+                      item.evidenceSummary ? h('p', { className: 'ilp-item-evidence' }, item.evidenceSummary) : null,
+                    ),
+                    h('div', { className: 'ilp-item-acts' },
+                      h('button', {
+                        type: 'button',
+                        className: 'ilp-btn line xs',
+                        onClick: function () { setModalItem(item) },
+                      }, '学习记录'),
+                      h('button', {
+                        type: 'button',
+                        className: 'ilp-btn soft xs',
+                        onClick: function () { handleStartDeepDrill(item) },
+                      }, '展开学'),
+                    ),
+                  )
+                }),
               ) : null,
             )
           }),
-        ) : null,
+          emptyTrackNames.length > 0 ? h('p', { className: 'ilp-empty-tracks-note', 'data-testid': 'ilp-empty-tracks-note' },
+            '其余待积累分类：' + emptyTrackNames.join(' · '),
+          ) : null,
+        ) : (!isCompletelyEmpty ? h('p', { className: 'ilp-empty-tracks-note', 'data-testid': 'ilp-empty-tracks-note' },
+          '练过或存下的内容会自动按分类归档到这里；目前还没有已存记录。',
+        ) : null),
 
         // Undo Toast (calm panel surface + green dot)
         toast ? h('div', { className: 'ilp-toast', role: 'status', 'data-testid': 'ilp-toast' },
@@ -1475,9 +1622,9 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
       }).then(function (res) {
         setSavedLocal(true)
         if (res && res.created === false) {
-          setFeedback('已在重点清单中')
+          setFeedback('已在技能库中')
         } else {
-          setFeedback('已标为重点待学，去顺带私教可复习')
+          setFeedback('已存进个人技能库，去顺带私教可随时开练')
         }
       }).catch(function (err) {
         setFeedback('保存失败：' + err.message)
@@ -1538,7 +1685,7 @@ function makeShieldFenceComponent(React, ctx, bridge, coachStore) {
               'data-testid': 'ilp-shield-capture-btn',
               'aria-pressed': isCaptured ? 'true' : 'false',
               onClick: handleSaveDirect,
-            }, isCaptured ? '已在重点清单' : '加入重点学'),
+            }, isCaptured ? '已存进技能库' : '存进技能库'),
             h('button', {
               type: 'button',
               className: 'ilp-quiet-btn is-ghost',
