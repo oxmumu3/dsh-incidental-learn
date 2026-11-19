@@ -14,7 +14,9 @@ import { handleActionRequest, handleViewRequest } from '../lib/routes.js'
 import { createLearnTools } from '../lib/tools.js'
 import {
   buildDeepLearnStarterPrompt,
+  buildSprintStarterPrompt,
   inferTrackIdFromTopic,
+  MAX_AUTO_TRIAGE,
   parseLearnPassFence,
   parseLearnQuizFence,
   parseShieldFence,
@@ -478,4 +480,85 @@ test('triage clear_all supports undoLast and skip records cardKey in dismissedCa
   } finally {
     fs.rmSync(dir, { recursive: true, force: true })
   }
+})
+
+test('V5 Plan A 3-layer precision guard: low-quality skip, 8-cap FIFO eviction, clear_older & inline 2/4 promotion', async t => {
+  const home = makeTempHome(t)
+  const store = createLedgerStore({ dshHome: home }).ensureInitialized()
+
+  // Seed 1 explicit learned item so we verify eviction never touches items
+  await store.saveExplicitItem({
+    id: 'saved-keep-1',
+    title: '不可被未看淘汰挤掉的已学条目',
+    why: '已入账学习条目长期保留',
+    trackId: 'track-engineering',
+  })
+
+  // Layer 1b: auto quality gate rejects lowValue: true and generic/empty placeholder cards
+  const lowSkipped = await store.captureCandidate({
+    title: '调试日志清理',
+    why: '顺手删掉一行打印',
+    lowValue: true,
+  }, { auto: true, cardKey: 'ck-low-val' })
+  assert.equal(lowSkipped.autoSkipped, true)
+  assert.equal(lowSkipped.lowQuality, true)
+  assert.equal(lowSkipped.snapshot.triage.length, 0)
+
+  const genericSkipped = await store.captureCandidate({
+    title: '占位通用卡片',
+    why: '已基于当前项目边界做出取舍。',
+    rejected: '已排除高维护成本或脆弱实现方案。',
+  }, { auto: true, cardKey: 'ck-generic' })
+  assert.equal(genericSkipped.autoSkipped, true)
+  assert.equal(genericSkipped.lowQuality, true)
+  assert.equal(genericSkipped.snapshot.triage.length, 0)
+
+  // Layer 2: MAX_AUTO_TRIAGE = 8 rolling FIFO cap evicts oldest untouched unread item on 9th capture
+  for (let i = 1; i <= MAX_AUTO_TRIAGE + 1; i += 1) {
+    await store.captureCandidate({
+      title: `严选经验条-${i}`,
+      why: `真实架构边界原因 ${i}`,
+      rejected: `排除方案 ${i}`,
+      trackId: 'track-frontend',
+    }, { auto: true, cardKey: `ck-cap-${i}` })
+  }
+  const snapAfter9 = store.getSnapshot().snapshot
+  assert.equal(snapAfter9.triage.length, MAX_AUTO_TRIAGE)
+  assert.equal(snapAfter9.triage[0].title, '严选经验条-9')
+  assert.equal(snapAfter9.triage.some(c => c.title === '严选经验条-1'), false, 'oldest auto candidate evicted at >8 cap')
+  assert.equal(snapAfter9.items.some(it => it.id === 'saved-keep-1'), true, 'saved items must never be evicted')
+
+  // Sprint builder combines unmastered items + unread triage up to 3 stations
+  assert.ok(snapAfter9.sprint15m && snapAfter9.sprint15m.stations.length === 3)
+  const sprintPrompt = buildSprintStarterPrompt(snapAfter9.sprint15m.stations)
+  assert.ok(sprintPrompt.startsWith('[顺带私教·专心闯关]'))
+  assert.ok(sprintPrompt.includes('第 1 站：'))
+
+  // Layer 3 backend helper: clear_older keeps newest 3 and supports undoLast
+  const clearedOlder = await store.triageBatch({ mode: 'clear_older', keep: 3 })
+  assert.equal(clearedOlder.affected, 5)
+  assert.equal(clearedOlder.snapshot.triage.length, 3)
+  assert.deepEqual(clearedOlder.snapshot.triage.map(c => c.title), ['严选经验条-9', '严选经验条-8', '严选经验条-7'])
+
+  const undoneOlder = await store.undoLast()
+  assert.equal(undoneOlder.undone, true)
+  assert.equal(undoneOlder.snapshot.triage.length, MAX_AUTO_TRIAGE)
+
+  // Inline 10s quick quiz upgrades unread triage candidate in-place to 2/4 and supports undoLast
+  const targetCand = undoneOlder.snapshot.triage[0]
+  const promoted = await store.recordMicroDrill({
+    candId: targetCand.id,
+    card: targetCand,
+    correct: true,
+    toTier: 2,
+    selectedKey: 'A',
+    evidenceNote: '行内 10 秒快测答对，原地记为 2/4',
+  })
+  assert.equal(promoted.toTier, 2)
+  assert.equal(promoted.snapshot.triage.some(c => c.id === targetCand.id), false)
+  assert.equal(promoted.snapshot.items.some(it => it.title === targetCand.title && it.masteryTier === 2), true)
+
+  const undonePromo = await store.undoLast()
+  assert.equal(undonePromo.undone, true)
+  assert.equal(undonePromo.snapshot.triage.some(c => c.title === targetCand.title), true)
 })

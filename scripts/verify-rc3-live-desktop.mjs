@@ -24,9 +24,9 @@ import path from 'node:path'
 import { setTimeout as delay } from 'node:timers/promises'
 
 const PKG = JSON.parse(fs.readFileSync(new URL('../package.json', import.meta.url), 'utf8'))
-const TARBALL = `/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v2-2026-11-14/dist/oxmumu3-dsh-incidental-learn-${PKG.version}.tgz`
+const TARBALL = process.env.ILP_TARBALL || `/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v020-2026-11-19/dist/oxmumu3-dsh-incidental-learn-${PKG.version}.tgz`
 const APP = '/Users/shan/dsh-finder-scratch/official-rc3-2026-11-13/apps/DeepSeek Harness.app'
-const OUT_DIR = '/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v2-2026-11-14/rc3-desktop-live'
+const OUT_DIR = process.env.ILP_OUT_DIR || '/Users/shan/Library/Mobile Documents/com~apple~CloudDocs/Agent/output/incidental-learn-v020-2026-11-19/rc3-desktop-live'
 
 const LIVE_PROFILE = path.join(os.homedir(), '.dsh', 'profiles', 'desktop')
 const LIVE_PKG = path.join(LIVE_PROFILE, 'package.json')
@@ -677,48 +677,73 @@ try {
   await ui.evaluate(`document.querySelector('[data-testid="ilp-sim-summary"]').click()`)
   await ui.waitFor('welcome preview details closed cleanly', () => ui.evaluate(`document.querySelector('[data-testid="ilp-welcome-preview"]')?.open === false`), 4000)
 
-  // Verify 0/0 + triage state renders DirectStudyBox, actionable clear_all, and hides empty 0/0 track shells
+  // Verify 0 + 3 (`user03`) Plan A direct-unfold + inline 10s quick-quiz 0/4 -> 2/4 upgrade + Undo, then clear_all -> 0/0
   await ui.evaluate(`(async () => {
-    const res = await fetch('/api/incidental_learn/action', {
-      method: 'POST',
-      headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify({
-        action: 'capture_candidate',
-        auto: false,
-        payload: {
-          title: '临时测试空分类隐藏',
-          trackId: 'track-frontend',
-          why: 'verify empty 0/0 shells stay hidden',
-        },
-      }),
-    })
-    if (!res.ok) throw new Error('capture_candidate failed: ' + res.status)
-  })()`)
-  await ui.waitFor('0/0 + triage shows direct study launcher and hides empty tracks', () => ui.evaluate(`Boolean(
-    document.querySelector('[data-testid="ilp-direct-study"]') &&
-    document.querySelector('[data-testid="ilp-triage-clear-all"]') &&
-    document.querySelector('[data-testid="ilp-empty-tracks-note"]')
-  )`), 15000)
-  const triageNoEmptyTracksCheck = await ui.evaluate(`(() => {
-    const startBtn = document.querySelector('[data-testid="ilp-direct-start-btn"]')
-    const trackCount = document.querySelectorAll('.ilp-track').length
-    return {
-      hasStartBtn: Boolean(startBtn),
-      startIsSolid: Boolean(startBtn && startBtn.classList.contains('solid')),
-      trackCount,
+    const seeds = [
+      { title: '三数一行的主次排版取舍', why: '主数字左上大号与辅助右上次号拉开第一眼层级', rejected: '保留占一整行的 7 天趋势柱状图' },
+      { title: '渐进披露决定默认态只留三项', why: '默认态只留高频决策项，低频细节按需悬停展开', rejected: '把全部历史明细塞进默认小窗' },
+      { title: '悬浮层按触发锚点而不是盒子定位', why: '展开时固定触发边不动并向可用空间延伸，贴边不溢出', rejected: '固定向下弹出再加内部滚动条' },
+    ]
+    for (const s of seeds) {
+      const res = await fetch('/api/incidental_learn/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          action: 'capture_candidate',
+          auto: false,
+          payload: { ...s, trackId: 'track-frontend', source: 'dsh-chat' },
+        }),
+      })
+      if (!res.ok) throw new Error('capture_candidate failed: ' + res.status)
     }
   })()`)
-  assert.equal(triageNoEmptyTracksCheck.hasStartBtn, true, 'triage workbench must render [data-testid="ilp-direct-start-btn"]')
-  assert.equal(triageNoEmptyTracksCheck.startIsSolid, true, 'direct study CTA must use .ilp-btn.solid')
-  assert.equal(triageNoEmptyTracksCheck.trackCount, 0, 'empty 0/0 tracks must remain hidden when items === 0')
+  await ui.waitFor('0 + 3 Plan A unified sheet renders 3 directly unfolded unread rows with zero 0/0 tracks', () => ui.evaluate(`(
+    Boolean(document.querySelector('[data-testid="ilp-direct-study"]')) &&
+    Boolean(document.querySelector('[data-testid="ilp-sheet"]')) &&
+    document.querySelectorAll('.ilp-row.is-unread').length === 3 &&
+    document.querySelectorAll('.ilp-track').length === 0 &&
+    !document.querySelector('[data-testid="ilp-overflow-bar"]')
+  )`), 15000)
+
+  const inlineQuizCheck = await ui.evaluate(`(() => {
+    const row = document.querySelector('.ilp-row.is-unread')
+    return row ? row.getAttribute('data-testid').replace(/^ilp-row-/, '') : null
+  })()`)
+  assert.ok(inlineQuizCheck, 'expected an unread row id for inline 10s quiz')
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-row-quiz-btn-${inlineQuizCheck}"]').click()`)
+  await ui.waitFor('inline 10s quiz opened inside row', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-inline-quiz-${inlineQuizCheck}"]'))`), 6000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-inline-opt-${inlineQuizCheck}-B"]').click()`)
+  await ui.waitFor('inline quiz feedback and 2/4 upgrade button shown', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-inline-upgrade-${inlineQuizCheck}"]'))`), 6000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-inline-upgrade-${inlineQuizCheck}"]').click()`)
+  await ui.waitFor('unread row promoted in-place to 2/4 saved row', () => ui.evaluate(`(
+    document.querySelectorAll('.ilp-row.is-unread').length === 2 &&
+    document.querySelectorAll('.ilp-row[data-row-kind="saved"]').length === 1 &&
+    Boolean(document.querySelector('[data-testid="ilp-toast-undo"]'))
+  )`), 8000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-toast-undo"]').click()`)
+  await ui.waitFor('undo restores 0 + 3 unread rows', () => ui.evaluate(`(
+    document.querySelectorAll('.ilp-row.is-unread').length === 3 &&
+    document.querySelectorAll('.ilp-row[data-row-kind="saved"]').length === 0
+  )`), 8000)
 
   await ui.evaluate(`document.querySelector('[data-testid="ilp-triage-clear-all"]').click()`)
   await ui.waitFor('clear_all returns to welcome screen', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-load-samples-btn"]'))`), 15000)
 
+  // Dismiss any residual toast, then load sample pack (5 items + 6 triage -> 3 unfolded + overflow bar + 5 saved!)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-toast-close"]')?.click()`)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-load-samples-btn"]').click()`)
-  await ui.waitFor('sample spotlight + direct study + preview banner + 4 tracks loaded', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-direct-study"]') && document.querySelector('[data-testid="ilp-spotlight"]') && document.querySelector('[data-testid="ilp-preview-banner"]') && document.querySelectorAll('.ilp-track').length === 4)`), 15000)
+  await ui.waitFor('sample spotlight + unified sheet + overflow bar (>3 unread) loaded', () => ui.evaluate(`(
+    Boolean(document.querySelector('[data-testid="ilp-direct-study"]')) &&
+    Boolean(document.querySelector('[data-testid="ilp-spotlight"]')) &&
+    Boolean(document.querySelector('[data-testid="ilp-preview-banner"]')) &&
+    Boolean(document.querySelector('[data-testid="ilp-sheet"]')) &&
+    Boolean(document.querySelector('[data-testid="ilp-overflow-bar"]')) &&
+    document.querySelectorAll('.ilp-row.is-unread').length === 3 &&
+    document.querySelectorAll('.ilp-row[data-row-kind="saved"]').length === 5 &&
+    document.querySelectorAll('.ilp-track').length === 0
+  )`), 15000)
 
-  // Verify non-empty header exposes non-destructive Usage Guide toggle (`使用说明`) without wiping accumulated ledger
+  // Verify non-empty header exposes non-destructive diagram toggle (`工作原理图`) without wiping accumulated ledger
   const guideCollapsedCheck = await ui.evaluate(`(() => {
     const btn = document.querySelector('[data-testid="ilp-toggle-guide-btn"]')
     return {
@@ -728,11 +753,11 @@ try {
       guideVisible: Boolean(document.querySelector('[data-testid="ilp-visual-guide"]')),
     }
   })()`)
-  assert.equal(guideCollapsedCheck.exists, true, 'non-empty header must show 使用说明 toggle')
-  assert.equal(guideCollapsedCheck.expanded, 'false', '使用说明 toggle must start collapsed')
+  assert.equal(guideCollapsedCheck.exists, true, 'non-empty header must show 工作原理图 toggle')
+  assert.equal(guideCollapsedCheck.expanded, 'false', '工作原理图 toggle must start collapsed')
   assert.equal(guideCollapsedCheck.guideVisible, false)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-toggle-guide-btn"]').click()`)
-  const guideOpenedCheck = await ui.waitFor('使用说明 opened alongside spotlight', () => ui.evaluate(`(() => {
+  const guideOpenedCheck = await ui.waitFor('工作原理图 opened alongside spotlight', () => ui.evaluate(`(() => {
     const g = document.querySelector('[data-testid="ilp-visual-guide"]')
     const s = document.querySelector('[data-testid="ilp-spotlight"]')
     const btn = document.querySelector('[data-testid="ilp-toggle-guide-btn"]')
@@ -749,26 +774,20 @@ try {
   assert.equal(guideOpenedCheck.guideVisible, true)
   assert.equal(guideOpenedCheck.mode, 'accumulated')
   assert.notEqual(guideOpenedCheck.borderTop, '0px', 'accumulated guide mode must wrap inside soft container')
-  assert.equal(guideOpenedCheck.spotlightVisible, true, 'opening 使用说明 must preserve accumulated spotlight below')
+  assert.equal(guideOpenedCheck.spotlightVisible, true, 'opening 工作原理图 must preserve accumulated spotlight below')
   assert.equal(guideOpenedCheck.hasCloseBtn, true)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-toggle-guide-btn"]').click()`)
-  await ui.waitFor('使用说明 collapsed cleanly', () => ui.evaluate(`!document.querySelector('[data-testid="ilp-visual-guide"]') && document.querySelector('[data-testid="ilp-toggle-guide-btn"]')?.getAttribute('aria-expanded') === 'false'`), 6000)
+  await ui.waitFor('工作原理图 collapsed cleanly', () => ui.evaluate(`!document.querySelector('[data-testid="ilp-visual-guide"]') && document.querySelector('[data-testid="ilp-toggle-guide-btn"]')?.getAttribute('aria-expanded') === 'false'`), 6000)
 
-  // Verify Triage Inbox starts collapsed (`aria-expanded="false"`), expand -> batch sweep -> Undo!
-  const triageInitExpanded = await ui.evaluate(`document.querySelector('[data-testid="ilp-triage-toggle"]').getAttribute('aria-expanded')`)
-  assert.equal(triageInitExpanded, 'false', 'triage inbox must be collapsed by default')
-  await ui.evaluate(`document.querySelector('[data-testid="ilp-triage-toggle"]').click()`)
-  await ui.waitFor('batch >5 bar visible', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-triage-batch"]'))`), 8000)
-  await ui.evaluate(`document.querySelector('[data-testid="ilp-batch-sweep-low"]').click()`)
-  await ui.waitFor('undo toast visible', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-toast-undo"]'))`), 8000)
-  await ui.evaluate(`document.querySelector('[data-testid="ilp-toast-undo"]').click()`)
-  await ui.waitFor('6 triage candidates restored', () => ui.evaluate(`document.querySelectorAll('.ilp-triage-row').length === 6`), 8000)
+  // Verify Layer 3 overflow bar: expand remaining older unread (3 -> 6 unread, 11 total rows), clear_older -> 3 unread -> Undo restores 6!
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-toggle-older-unread"]').click()`)
+  await ui.waitFor('older unread expanded to 6 unread + 5 saved', () => ui.evaluate(`(
+    document.querySelectorAll('.ilp-row.is-unread').length === 6 &&
+    document.querySelectorAll('.ilp-row').length === 11 &&
+    document.querySelector('[data-testid="ilp-toggle-older-unread"]')?.getAttribute('aria-expanded') === 'true'
+  )`), 6000)
 
-  // Real mouseWheel vertical scroll check BEFORE Emulation device metrics override: expand 15-min course so content overflows cleanly
-  await ui.evaluate(`(() => {
-    const btn = document.querySelector('[data-testid="ilp-course-toggle-btn"]')
-    if (btn) btn.click()
-  })()`)
+  // Real mouseWheel vertical scroll check BEFORE Emulation device metrics override (11 rows + spotlight + intent box overflows 900px cleanly)
   const wheelBox = await ui.waitFor('workbench scrollable overflow', () => ui.evaluate(`(() => {
     const wb = document.querySelector('.ilp-wb')
     if (!wb || wb.scrollHeight <= wb.clientHeight) return null
@@ -784,27 +803,33 @@ try {
   await ui.evaluate(`(() => {
     const wb = document.querySelector('.ilp-wb')
     if (wb) wb.scrollTop = 0
-    const closeBtn = document.querySelector('[data-testid="ilp-course-toggle-btn"]')
-    if (closeBtn) closeBtn.click()
   })()`)
 
-  // Collapse triage back & dismiss transient undo toast for clean calm workbench screenshots
+  // Clear older 3 unread -> Undo restores back to 6 unread, then fold older bar & dismiss toast for crisp screenshots
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-clear-older-unread"]').click()`)
+  await ui.waitFor('clear_older trims to 3 unread with undo toast', () => ui.evaluate(`(
+    document.querySelectorAll('.ilp-row.is-unread').length === 3 &&
+    !document.querySelector('[data-testid="ilp-overflow-bar"]') &&
+    Boolean(document.querySelector('[data-testid="ilp-toast-undo"]'))
+  )`), 8000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-toast-undo"]').click()`)
+  await ui.waitFor('undo restores 6 unread + overflow bar', () => ui.evaluate(`Boolean(document.querySelector('[data-testid="ilp-overflow-bar"]'))`), 8000)
   await ui.evaluate(`(() => {
-    document.querySelector('[data-testid="ilp-triage-toggle"]')?.click()
-    const closeBtn = [...document.querySelectorAll('.ilp-toast button')].find(b => b.textContent?.trim() === '关闭')
-    if (closeBtn) closeBtn.click()
+    const btn = document.querySelector('[data-testid="ilp-toggle-older-unread"]')
+    if (btn && btn.getAttribute('aria-expanded') === 'true') btn.click()
+    document.querySelector('[data-testid="ilp-toast-close"]')?.click()
   })()`)
   receipt.workbenchInteractions = {
     emptyOnboardingLoaded: true,
-    triageDefaultCollapsed: true,
-    batchSweepAndUndoOk: true,
+    inlineQuickQuizUpgradeUndoOk: true,
+    overflowFoldClearOlderUndoOk: true,
     wheelScrollCheck: wheelScroll,
   }
 
-  // 2. Native <dialog closedby="any"> showModal() evidence check
+  // 2. Native <dialog closedby="any"> showModal() checks: EvidenceDialog (#ilp-skill-dialog) & SprintDialog (#ilp-sprint-dialog)
   await ui.evaluate(`document.querySelector('[data-testid="ilp-open-evidence-modal"]').click()`)
-  const modalState = await ui.waitFor('native dialog open', () => ui.evaluate(`(() => {
-    const d = document.querySelector('dialog.ilp-dialog');
+  const modalState = await ui.waitFor('native skill dialog open', () => ui.evaluate(`(() => {
+    const d = document.querySelector('[data-testid="ilp-skill-dialog"]');
     if (!d || !d.open) return null;
     return {
       open: d.open,
@@ -818,17 +843,37 @@ try {
   assert.equal(modalState.closedby, 'any')
   assert.equal(modalState.hasRoleAttr, false, '<dialog> must not carry redundant role="dialog"')
   assert.equal(modalState.hasAriaModal, false, '<dialog> showModal must not carry redundant aria-modal')
-  receipt.nativeDialogCheck = modalState
-  await ui.evaluate(`document.querySelector('dialog.ilp-dialog .ilp-btn.line').click()`)
-  await ui.waitFor('native dialog closed', () => ui.evaluate(`!document.querySelector('dialog.ilp-dialog')?.open`), 5000)
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-skill-dialog-close"]').click()`)
+  await ui.waitFor('native skill dialog closed', () => ui.evaluate(`!document.querySelector('[data-testid="ilp-skill-dialog"]')?.open`), 5000)
+
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sprint-open-btn"]').click()`)
+  const sprintModalState = await ui.waitFor('native sprint dialog open', () => ui.evaluate(`(() => {
+    const d = document.querySelector('[data-testid="ilp-sprint-dialog"]');
+    if (!d || !d.open) return null;
+    return {
+      open: d.open,
+      closedby: d.getAttribute('closedby'),
+      stationsCount: d.querySelectorAll('.ilp-station').length,
+      hasRoleAttr: d.hasAttribute('role'),
+      hasAriaModal: d.hasAttribute('aria-modal'),
+    };
+  })()`), 8000)
+  assert.equal(sprintModalState.open, true)
+  assert.equal(sprintModalState.closedby, 'any')
+  assert.equal(sprintModalState.stationsCount, 3, 'sprint dialog must show 3 stations')
+  assert.equal(sprintModalState.hasRoleAttr, false)
+  assert.equal(sprintModalState.hasAriaModal, false)
+  receipt.nativeDialogCheck = { skillDialog: modalState, sprintDialog: sprintModalState }
+  await ui.evaluate(`document.querySelector('[data-testid="ilp-sprint-close-btn"]').click()`)
+  await ui.waitFor('native sprint dialog closed', () => ui.evaluate(`!document.querySelector('[data-testid="ilp-sprint-dialog"]')?.open`), 5000)
 
   // 3. Capture 4 Workbench @2x Screenshots (Light 1440, Dark 1440, Dark 680 split, Dark 390 narrow)
   await captureShot('rc3-01-workbench-1440-light.png', 1440, 900, 'light', false)
   await captureShot('rc3-02-workbench-1440-dark.png', 1440, 900, 'dark', false)
   await captureShot('rc3-03-workbench-split-680-dark.png', 680, 900, 'dark', true)
   await captureShot('rc3-04-workbench-narrow-390-dark.png', 390, 844, 'dark', true)
-  const narrowInputH = await ui.evaluate(`Math.round(document.querySelector('.ilp-direct-input')?.getBoundingClientRect().height || 0)`)
-  assert.ok(narrowInputH >= 30 && narrowInputH <= 52, `narrow 390px .ilp-direct-input must stay single-line (<=52px), got ${narrowInputH}`)
+  const narrowInputH = await ui.evaluate(`Math.round(document.querySelector('.ilp-intent-input')?.getBoundingClientRect().height || 0)`)
+  assert.ok(narrowInputH >= 30 && narrowInputH <= 52, `narrow 390px .ilp-intent-input must stay single-line (<=52px), got ${narrowInputH}`)
 
   // Restore empty state temporarily to capture 0/0 Visual Onboarding @2x Screenshots, then re-load samples for Probes P1..P3
   await ui.command('Emulation.setDeviceMetricsOverride', { width: 1440, height: 900, deviceScaleFactor: 2, mobile: false })
@@ -1086,7 +1131,7 @@ try {
   // Click 「存进技能库」 -> promotes via save_explicit & updates digest pill in conversation.input.right!
   await ui.evaluate(`document.querySelector('[data-testid="ilp-shield-capture-btn"]').click()`)
   const shieldFb = await ui.waitFor('shield direct save feedback', () => ui.evaluate(`document.querySelector('[data-testid="ilp-shield-feedback"]')?.textContent || null`), 8000)
-  assert.match(shieldFb, /已存进个人技能库|已在技能库中|已标为重点待学|已在重点清单中/)
+  assert.match(shieldFb, /已存进顺带私教手账|已在技能手账中|已存进个人技能库|已在技能库中/)
   const pillText = await ui.waitFor('composer right pill present', () => ui.evaluate(`document.querySelector('[data-testid="ilp-composer-pill"]')?.textContent || null`), 8000)
   assert.match(pillText, /^顺带学习 · 已存 \d+ 张$/)
   receipt.probeP1P2 = {

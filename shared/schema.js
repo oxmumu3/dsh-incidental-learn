@@ -5,6 +5,8 @@
 export const PANEL_KEY = 'incidental-learn'
 export const COACH_TAB_ID = '@oxmumu3/dsh-incidental-learn/coach'
 export const COACH_TAB_KIND = 'incidental-learn-coach'
+export const MAX_AUTO_TRIAGE = 8
+export const MAX_DIRECT_UNREAD = 3
 
 export const SOURCES = ['dsh-chat', 'antigravity', 'codex', 'superagent-review', 'manual']
 export const EPISTEMIC_STATES = ['verified', 'explicit', 'inferred']
@@ -468,4 +470,20 @@ export function buildDeepLearnStarterPrompt(item) {
       ? '这是我主动发起的专心学习主题（若涉及当前工作区代码，可先快速只读扫一眼关键实现）。请严格按「先探后讲 + 换景追问」节奏带我一对一闯关：第 1 轮直接输出一个 ```learn-quiz JSON 代码块让我先盲选判断并停下等我回复，暂不要剧透完整解释。'
       : '请严格按「先探后讲 + 换景追问」节奏带我过关：第 1 轮直接输出一个 ```learn-quiz JSON 代码块让我先盲选判断并停下等我回复，暂不要剧透完整解释。',
   ].filter(Boolean).join('\n')
+}
+
+export function buildSprintStarterPrompt(stations) {
+  const list = Array.isArray(stations) ? stations.filter(Boolean).slice(0, 3) : []
+  if (list.length === 0) return buildDeepLearnStarterPrompt({ title: '一本手账精选串联闯关', masteryTier: 1 })
+  if (list.length === 1) return buildDeepLearnStarterPrompt(list[0])
+  const lines = list.map((st, idx) => {
+    const label = cleanText(st.masteryLabel, 40) || MASTERY_LABELS[clampTier(st.masteryTier || 1)]
+    return `第 ${idx + 1} 站：${cleanText(st.title, 120)}（itemId: ${cleanText(st.itemId || st.id, 80) || 'ad-hoc'}，当前 ${label}）`
+  })
+  return [
+    '[顺带私教·专心闯关]',
+    `本次开启 ${list.length} 站串联考考我（共约 ${list.length * 5} 分钟），逐站按「先探后讲 + 换景追问」过关：`,
+    ...lines,
+    '请先从第 1 站开始，直接输出一个 ```learn-quiz JSON 代码块让我先盲选判断并停下等我回复，暂不要剧透完整解释；每过一站在调用 learn_checkpoint 后再进入下一站。',
+  ].join('\n')
 }
